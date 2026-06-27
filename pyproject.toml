@@ -1,0 +1,90 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "aegis-sandbox"
+version = "0.1.0"
+description = "Aegis Sandbox — AI-assisted multi-OS malware analysis platform (static analysis engine + control plane)"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "Proprietary — authorized security research use only" }
+authors = [{ name = "Security Engineering Team" }]
+
+# Core deps needed everywhere (engine + api + worker share one image).
+dependencies = [
+    "pydantic>=2.6",
+    "pydantic-settings>=2.2",
+    "structlog>=24.1",
+]
+
+[project.optional-dependencies]
+# The static analysis engine. Pure-Python parsers (pefile/pyelftools) install
+# anywhere; androguard/tlsh pull native wheels (run in the Linux worker image).
+static = [
+    "pefile>=2024.8.26",
+    "pyelftools>=0.31",
+    "androguard>=4.1.2",
+    "python-tlsh>=4.5.0",
+]
+
+api = [
+    "fastapi>=0.111",
+    "uvicorn[standard]>=0.30",
+    "sqlalchemy>=2.0.30",
+    "alembic>=1.13",
+    "psycopg[binary]>=3.1.19",
+    "python-jose[cryptography]>=3.3",
+    "passlib>=1.7.4",  # pbkdf2_sha256 (pure-Python) — no native bcrypt dependency
+    "python-multipart>=0.0.9",
+    "boto3>=1.34",            # MinIO / S3-compatible object storage
+    "opensearch-py>=2.6",
+    "qdrant-client>=1.9",
+    "redis>=5.0",
+]
+
+worker = [
+    "celery[redis]>=5.4",
+    "redis>=5.0",
+    "sqlalchemy>=2.0.30",
+    "psycopg[binary]>=3.1.19",
+    "boto3>=1.34",
+    "opensearch-py>=2.6",
+]
+
+dev = [
+    "pytest>=8.2",
+    "pytest-cov>=5.0",
+    "ruff>=0.5",
+    "mypy>=1.10",
+    "httpx>=0.27",            # FastAPI TestClient
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+aegis = ["py.typed"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+filterwarnings = ["ignore::DeprecationWarning"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "C4", "SIM"]
+ignore = [
+    "E501",   # line length handled by formatter / not enforced
+    "B008",   # function call in default arg — this is the FastAPI Depends()/Query() idiom
+    "UP042",  # prefer StrEnum — we use (str, Enum) deliberately for broad compatibility
+]
+
+[tool.mypy]
+python_version = "3.11"
+plugins = ["pydantic.mypy"]
+ignore_missing_imports = true
