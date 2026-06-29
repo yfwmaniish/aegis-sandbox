@@ -67,25 +67,34 @@ def _print_apk(a) -> None:
 
 
 def _doctor() -> int:
-    """Report dynamic-analysis toolchain readiness."""
+    """Report dynamic-analysis toolchain readiness for each backend."""
+    from aegis.orchestrator.avd import AvdOrchestrator
     from aegis.orchestrator.genymotion import GenymotionOrchestrator
 
     print("Aegis dynamic-analysis preflight")
-    print("=" * 40)
-    status = GenymotionOrchestrator.preflight()
-    all_ok = True
-    for tool, ok in status.items():
+    print("=" * 44)
+
+    print("\n[avd] Android Emulator - free, no license (recommended)")
+    avd = AvdOrchestrator.preflight()
+    for tool, ok in avd.items():
         print(f"  [{'OK ' if ok else 'MISSING'}] {tool}")
-        all_ok = all_ok and ok
+    avd_ready = avd.get("emulator") and avd.get("adb")
+
+    print("\n[genymotion] Genymotion Desktop (gmtool may need a paid license)")
+    gm = GenymotionOrchestrator.preflight()
+    for tool, ok in gm.items():
+        print(f"  [{'OK ' if ok else 'MISSING'}] {tool}")
+
     print()
-    if all_ok:
-        print("All tools present — Genymotion detonation available.")
+    if avd_ready:
+        print("AVD backend ready. Set SANDBOX_BACKEND=avd, create an AVD named per AVD_NAME,")
+        print("and (for API hooking) pip install frida + set FRIDA_SERVER_PATH.")
     else:
-        print("Install the missing pieces for real detonation:")
-        print("  - Genymotion Desktop (provides 'gmtool')   https://www.genymotion.com")
-        print("  - Android platform-tools (provides 'adb')")
-        print("  - pip install frida-tools  (+ frida-server on the device image)")
-        print("\nWithout them, set SANDBOX_BACKEND=fake to exercise the dynamic pipeline,")
+        print("For the free path, install the Android SDK 'emulator' + platform-tools 'adb':")
+        print("  - Android command-line tools / Android Studio  https://developer.android.com/studio")
+        print("  - Create an AVD (x86_64, API 30, Google APIs) named 'aegis-avd'")
+        print("  - pip install frida frida-tools  (+ matching frida-server, FRIDA_SERVER_PATH)")
+        print("\nWithout a device, set SANDBOX_BACKEND=fake to exercise the pipeline (SIMULATED),")
         print("or leave it unset for static-only analysis.")
     return 0
 

@@ -66,12 +66,18 @@ class Settings(BaseSettings):
         return bool(self.anthropic_api_key)
 
     # Dynamic detonation. ``sandbox_backend`` selects the orchestrator: "" disables
-    # dynamic (static-only), "genymotion" uses a real device, "fake" replays canned
-    # telemetry (tests/demos). Only profiles other than static_only detonate.
+    # dynamic (static-only); "avd" uses the free Android Emulator; "genymotion" uses a
+    # Genymotion device; "fake" replays canned telemetry (tests/demos). Only profiles
+    # other than static_only detonate.
     sandbox_backend: str = Field(default="", alias="SANDBOX_BACKEND")
     genymotion_device: str = Field(default="aegis-android", alias="GENYMOTION_DEVICE")
+    avd_name: str = Field(default="aegis-avd", alias="AVD_NAME")
+    android_sdk_root: str | None = Field(default=None, alias="ANDROID_SDK_ROOT")
+    frida_server_path: str | None = Field(default=None, alias="FRIDA_SERVER_PATH")
     dynamic_max_runtime_seconds: int = Field(default=120, alias="DYNAMIC_MAX_RUNTIME_SECONDS")
     dynamic_network_policy: str = Field(default="sinkhole", alias="DYNAMIC_NETWORK_POLICY")
+    # Refuse to detonate unless the device is verified to have no internet egress.
+    dynamic_require_isolation: bool = Field(default=True, alias="DYNAMIC_REQUIRE_ISOLATION")
 
     # Static analysis limits
     static_max_file_mb: int = Field(default=200, alias="STATIC_MAX_FILE_MB")

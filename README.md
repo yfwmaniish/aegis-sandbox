@@ -128,27 +128,39 @@ export SANDBOX_BACKEND=fake          # replays a canned spyware run through the 
 # then GET /v1/analyses/{id}/dynamic   and   /findings
 ```
 
-### Real detonation (Genymotion)
+### Real detonation — `avd` backend (free, recommended)
+
+The Android Emulator path needs no license and runs on Hyper-V (WHPX). It also isolates
+cleanly: adb runs on a separate channel from the guest network, so the engine enforces
+**airplane mode** and **verifies no internet egress before staging the sample** — aborting
+the run if the device can still reach the internet (`DYNAMIC_REQUIRE_ISOLATION=true`).
 
 ```bash
-python -m aegis.cli doctor            # checks gmtool / adb / frida
+python -m aegis.cli doctor            # checks emulator / adb / frida per backend
 ```
 
 Install:
-1. **Genymotion Desktop** (provides `gmtool`) + a device named `aegis-android`
-   (or set `GENYMOTION_DEVICE`).
-2. **Android platform-tools** (`adb`) on PATH.
-3. `pip install frida-tools` and push **frida-server** into the device image.
+1. **Android SDK** `emulator` + `platform-tools` (`adb`) on PATH (Android Studio or
+   command-line tools). Set `ANDROID_SDK_ROOT` if not on PATH.
+2. Create an AVD (x86_64, API 30, Google APIs) named **`aegis-avd`** (or set `AVD_NAME`).
+3. `pip install frida frida-tools` and provide a matching frida-server via `FRIDA_SERVER_PATH`.
 
-Then:
 ```bash
-export SANDBOX_BACKEND=genymotion
-export GENYMOTION_DEVICE=aegis-android
-export DYNAMIC_MAX_RUNTIME_SECONDS=120
+export SANDBOX_BACKEND=avd
+export AVD_NAME=aegis-avd
+export FRIDA_SERVER_PATH=/path/to/frida-server-<ver>-android-x86_64
 ```
-Analyses created with profile `standard`/`hardened` on an APK will detonate; the
-runtime findings merge into the same `/findings` + risk score, and the full event
-stream is at `GET /v1/analyses/{id}/dynamic`.
+
+### Real detonation — `genymotion` backend (alternative)
+
+Same flow via `gmtool` + `adb` + Frida; note `gmtool` may require a **paid** Genymotion
+license. Install Genymotion Desktop, create a device named `aegis-android` (or set
+`GENYMOTION_DEVICE`), then `SANDBOX_BACKEND=genymotion`. Isolation here must be done at the
+hypervisor (host-only network) since Genymotion's adb shares the guest network.
+
+In all cases, analyses created with profile `standard`/`hardened` on an APK detonate;
+runtime findings merge into the same `/findings` + risk score, and the full event stream
+is at `GET /v1/analyses/{id}/dynamic`.
 
 ## Full stack (Docker Compose)
 

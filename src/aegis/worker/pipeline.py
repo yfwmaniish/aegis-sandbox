@@ -172,6 +172,8 @@ def _load_backend(name: str):
     import aegis.orchestrator.fake  # noqa: F401
     if name == "genymotion":
         import aegis.orchestrator.genymotion  # noqa: F401
+    elif name == "avd":
+        import aegis.orchestrator.avd  # noqa: F401
     return get_backend(name)
 
 
