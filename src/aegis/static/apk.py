@@ -70,10 +70,44 @@ _DEX_API_MARKERS: dict[bytes, str] = {
     b"Landroid/media/projection": "MediaProjection (screen capture)",
     b"Lorg/json": "JSON (C2 protocol, weak signal)",
     b"createSocket": "raw socket (C2)",
+    # Generic networking / HTTP clients — capability even without SMS/accessibility.
+    b"Ljava/net/URL": "java.net.URL (HTTP networking)",
+    b"Ljava/net/HttpURLConnection": "HttpURLConnection (HTTP C2)",
+    b"Ljavax/net/ssl/HttpsURLConnection": "HttpsURLConnection (HTTPS C2)",
+    b"Lokhttp3": "OkHttp (HTTP client)",
+    b"Lretrofit2": "Retrofit (REST client)",
+    b"Lcom/android/volley": "Volley (HTTP client)",
+    b"Ljava/net/Socket": "java.net.Socket (raw TCP)",
+    # Reflection — used to hide API calls / load hidden behaviour.
+    b"Ljava/lang/reflect/Method": "reflection (hidden API calls)",
+    b"Ljava/lang/Class;->forName": "Class.forName (reflective loading)",
+    # Background persistence.
+    b"Landroid/app/job/JobScheduler": "JobScheduler (background persistence)",
+    b"Landroidx/work/WorkManager": "WorkManager (background persistence)",
+    # Surveillance: location, camera, microphone/recording.
+    b"getLastKnownLocation": "location (getLastKnownLocation)",
+    b"requestLocationUpdates": "location tracking (requestLocationUpdates)",
+    b"Landroid/hardware/Camera": "Camera API (photo/video capture)",
+    b"Landroid/hardware/camera2": "Camera2 API (photo/video capture)",
+    b"Landroid/media/MediaRecorder": "MediaRecorder (audio/video capture)",
+    b"Landroid/media/AudioRecord": "AudioRecord (microphone capture)",
+    b"getRunningAppProcesses": "getRunningAppProcesses (process enumeration)",
+    b"Landroid/provider/ContactsContract": "ContactsContract (contact harvesting)",
+    b"Landroid/provider/CallLog": "CallLog (call-log harvesting)",
 }
 
 
+def _silence_androguard_logs() -> None:
+    """androguard 4.x logs verbosely via loguru on every parse — disable it so the
+    engine output (and any caller's stdout) stays clean."""
+    with contextlib.suppress(Exception):
+        from loguru import logger as _loguru
+
+        _loguru.disable("androguard")
+
+
 def _import_apk_class():
+    _silence_androguard_logs()
     try:  # androguard >= 4.x
         from androguard.core.apk import APK  # type: ignore
         return APK
@@ -173,6 +207,24 @@ def _scan_dex_apis(data: bytes) -> tuple[list[str], int, list[str]]:
     return sorted(apis), dex_count, sorted(set(native_libs))
 
 
+def _safe(fn, default=None):
+    """Call an androguard getter, returning ``default`` on any failure. androguard
+    raises (e.g. KeyError) rather than returning None for fields a malformed/modded
+    APK omits, so one missing field must not abort the whole analysis (TR-STA-02)."""
+    try:
+        return fn()
+    except Exception:  # noqa: BLE001 - androguard getters raise varied exceptions
+        return default
+
+
+def _safe_int(fn) -> int | None:
+    val = _safe(fn)
+    try:
+        return int(val) if val not in (None, "") else None
+    except (TypeError, ValueError):
+        return None
+
+
 def analyze(data: bytes) -> tuple[APKFeatures, list[SuspiciousIndicator], list[IOC]]:
     """Parse ``data`` as an APK; returns features, indicators and manifest-derived IOCs."""
     APK = _import_apk_class()
@@ -180,22 +232,17 @@ def analyze(data: bytes) -> tuple[APKFeatures, list[SuspiciousIndicator], list[I
     feats = APKFeatures()
     indicators: list[SuspiciousIndicator] = []
 
-    feats.package = apk.get_package()
-    feats.version_name = apk.get_androidversion_name()
-    try:
-        vc = apk.get_androidversion_code()
-        feats.version_code = int(vc) if vc is not None else None
-    except (TypeError, ValueError):
-        feats.version_code = None
-    try:
-        feats.min_sdk = int(apk.get_min_sdk_version()) if apk.get_min_sdk_version() else None
-        feats.target_sdk = int(apk.get_target_sdk_version()) if apk.get_target_sdk_version() else None
-    except (TypeError, ValueError):
-        pass
-    feats.main_activity = apk.get_main_activity()
+    # Every metadata getter is wrapped: modded/obfuscated APKs frequently omit fields
+    # that make androguard raise instead of returning None.
+    feats.package = _safe(apk.get_package)
+    feats.version_name = _safe(apk.get_androidversion_name)
+    feats.version_code = _safe_int(apk.get_androidversion_code)
+    feats.min_sdk = _safe_int(apk.get_min_sdk_version)
+    feats.target_sdk = _safe_int(apk.get_target_sdk_version)
+    feats.main_activity = _safe(apk.get_main_activity)
 
     # Permissions, partitioned.
-    perms = sorted(set(apk.get_permissions() or []))
+    perms = sorted(set(_safe(apk.get_permissions, []) or []))
     feats.permissions = perms
     feats.dangerous_permissions = [p for p in perms if p in _DANGEROUS_PERMISSIONS]
     with contextlib.suppress(Exception):

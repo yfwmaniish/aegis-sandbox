@@ -98,6 +98,12 @@ class Analysis(Base, TimestampMixin):
     static_report: Mapped[StaticReportRow | None] = relationship(
         back_populates="analysis", cascade="all, delete-orphan", uselist=False
     )
+    dynamic_report: Mapped[DynamicReportRow | None] = relationship(
+        back_populates="analysis", cascade="all, delete-orphan", uselist=False
+    )
+    ai_understanding: Mapped[AIUnderstandingRow | None] = relationship(
+        back_populates="analysis", cascade="all, delete-orphan", uselist=False
+    )
     findings: Mapped[list[Finding]] = relationship(
         back_populates="analysis", cascade="all, delete-orphan"
     )
@@ -121,6 +127,42 @@ class StaticReportRow(Base, TimestampMixin):
     report: Mapped[dict] = mapped_column(JSON, nullable=False)
 
     analysis: Mapped[Analysis] = relationship(back_populates="static_report")
+
+
+class DynamicReportRow(Base, TimestampMixin):
+    __tablename__ = "dynamic_reports"
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=_uuid)
+    analysis_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("analyses.id", ondelete="CASCADE"), nullable=False, unique=True, index=True
+    )
+    schema_version: Mapped[str] = mapped_column(String(16), nullable=False)
+    backend: Mapped[str] = mapped_column(String(32), default="unknown", nullable=False)
+    exit_reason: Mapped[str] = mapped_column(String(32), default="unknown", nullable=False)
+    event_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    # Full DynamicReport (events + behaviour roll-ups), stored verbatim (NFR-17).
+    report: Mapped[dict] = mapped_column(JSON, nullable=False)
+
+    analysis: Mapped[Analysis] = relationship(back_populates="dynamic_report")
+
+
+class AIUnderstandingRow(Base, TimestampMixin):
+    """LLM-generated understanding of an analysis (Claude). Stored with model + prompt
+    version (TR-REP-03); always human-review-required."""
+
+    __tablename__ = "ai_understandings"
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=_uuid)
+    analysis_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("analyses.id", ondelete="CASCADE"), nullable=False, unique=True, index=True
+    )
+    model: Mapped[str] = mapped_column(String(64), nullable=False)
+    prompt_version: Mapped[str] = mapped_column(String(16), nullable=False)
+    review_required: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    generated_by: Mapped[str | None] = mapped_column(String(150))
+    understanding: Mapped[dict] = mapped_column(JSON, nullable=False)
+
+    analysis: Mapped[Analysis] = relationship(back_populates="ai_understanding")
 
 
 class Finding(Base, TimestampMixin):
@@ -189,6 +231,8 @@ __all__ = [
     "Sample",
     "Analysis",
     "StaticReportRow",
+    "DynamicReportRow",
+    "AIUnderstandingRow",
     "Finding",
     "IOCRow",
     "AuditLog",

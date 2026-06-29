@@ -41,15 +41,18 @@ def test_unknown():
     assert detect_file_type(b"not a real binary header") == FileType.UNKNOWN
 
 
-def test_extension_hint_for_apk():
+def test_apk_extension_without_manifest_is_zip():
+    # A .apk-named ZIP with no AndroidManifest.xml is NOT an installable APK — it is a
+    # project/archive (e.g. apktool/APKEditor output) and must route to ZIP, not APK.
     import zipfile
     from io import BytesIO
 
     buf = BytesIO()
     with zipfile.ZipFile(buf, "w") as zf:
-        zf.writestr("stuff.bin", b"x")
-    # No manifest, but .apk extension -> APK.
-    assert detect_file_type(buf.getvalue(), filename="app.apk") == FileType.APK
+        zf.writestr("original/com.example.apk", b"x")
+        for i in range(60):
+            zf.writestr(f"smali/com/x/C{i}.smali", b".class")
+    assert detect_file_type(buf.getvalue(), filename="app.apk") == FileType.ZIP
 
 
 def test_mime_mapping():

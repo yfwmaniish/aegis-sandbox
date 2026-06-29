@@ -31,8 +31,9 @@ plug-in interface (a real KVM/libvirt + Android-emulator backend implements it l
 | Celery + Redis task pipeline | ✅ | [`src/aegis/worker/`](src/aegis/worker/) |
 | Postgres schema + Alembic | ✅ | [`src/aegis/db/`](src/aegis/db/), [`migrations/`](migrations/) |
 | Object storage (S3/MinIO + local) | ✅ | [`src/aegis/storage/`](src/aegis/storage/) |
+| Dynamic detonation (Android) | ✅ engine + Genymotion backend | [`dynamic/`](src/aegis/dynamic/), [`orchestrator/genymotion.py`](src/aegis/orchestrator/genymotion.py) |
 | Similarity / clustering / YARA-Sigma | 🚧 `501` stubs | intel phase |
-| Dynamic detonation backend | 🚧 interface only | detonation zone |
+| LLM understanding (Claude) | 🚧 next | needs `ANTHROPIC_API_KEY` |
 
 ### What the static engine extracts
 
@@ -106,6 +107,48 @@ python -m aegis.cli analyze /path/to/app.apk --json      # full JSON report
 ```
 
 ---
+
+## Dynamic analysis (detonation)
+
+Runs an APK in an **Android emulator**, observes what it actually does (runtime
+permissions, network/C2, SMS, location, mic/camera, command exec, dynamic code
+loading), then **uninstalls + reverts the snapshot** — nothing persists, the host is
+never touched. The behaviour is normalized into a canonical event stream
+([TRD §6.2](src/aegis/dynamic/models.py)) and scored by the dynamic detectors.
+
+Architecture: the analytical core ([`aegis.dynamic`](src/aegis/dynamic/)) is
+infra-agnostic and fully tested with fixtures + a fake backend; the real device is
+driven by a pluggable [`SandboxOrchestrator`](src/aegis/orchestrator/base.py) backend.
+
+### Try it now (no device — fake backend)
+
+```bash
+export SANDBOX_BACKEND=fake          # replays a canned spyware run through the pipeline
+# create an analysis with a non-static profile -> POST /v1/analyses {"profile":"standard"}
+# then GET /v1/analyses/{id}/dynamic   and   /findings
+```
+
+### Real detonation (Genymotion)
+
+```bash
+python -m aegis.cli doctor            # checks gmtool / adb / frida
+```
+
+Install:
+1. **Genymotion Desktop** (provides `gmtool`) + a device named `aegis-android`
+   (or set `GENYMOTION_DEVICE`).
+2. **Android platform-tools** (`adb`) on PATH.
+3. `pip install frida-tools` and push **frida-server** into the device image.
+
+Then:
+```bash
+export SANDBOX_BACKEND=genymotion
+export GENYMOTION_DEVICE=aegis-android
+export DYNAMIC_MAX_RUNTIME_SECONDS=120
+```
+Analyses created with profile `standard`/`hardened` on an APK will detonate; the
+runtime findings merge into the same `/findings` + risk score, and the full event
+stream is at `GET /v1/analyses/{id}/dynamic`.
 
 ## Full stack (Docker Compose)
 

@@ -55,6 +55,24 @@ class Settings(BaseSettings):
     opensearch_url: str = Field(default="http://localhost:9200", alias="OPENSEARCH_URL")
     qdrant_url: str = Field(default="http://localhost:6333", alias="QDRANT_URL")
 
+    # LLM (Claude) — AI-assisted understanding/reporting. Key from the environment,
+    # never hardcoded (TR-SEC). When unset, the feature degrades gracefully.
+    anthropic_api_key: str | None = Field(default=None, alias="ANTHROPIC_API_KEY")
+    llm_model: str = Field(default="claude-opus-4-8", alias="AEGIS_LLM_MODEL")
+    llm_max_tokens: int = Field(default=8000, alias="AEGIS_LLM_MAX_TOKENS")
+
+    @property
+    def llm_enabled(self) -> bool:
+        return bool(self.anthropic_api_key)
+
+    # Dynamic detonation. ``sandbox_backend`` selects the orchestrator: "" disables
+    # dynamic (static-only), "genymotion" uses a real device, "fake" replays canned
+    # telemetry (tests/demos). Only profiles other than static_only detonate.
+    sandbox_backend: str = Field(default="", alias="SANDBOX_BACKEND")
+    genymotion_device: str = Field(default="aegis-android", alias="GENYMOTION_DEVICE")
+    dynamic_max_runtime_seconds: int = Field(default=120, alias="DYNAMIC_MAX_RUNTIME_SECONDS")
+    dynamic_network_policy: str = Field(default="sinkhole", alias="DYNAMIC_NETWORK_POLICY")
+
     # Static analysis limits
     static_max_file_mb: int = Field(default=200, alias="STATIC_MAX_FILE_MB")
     static_string_min_len: int = Field(default=5, alias="STATIC_STRING_MIN_LEN")

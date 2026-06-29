@@ -1,0 +1,462 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Aegis Sandbox — Static Analysis Console</title>
+<style>
+  :root {
+    --bg:#0d1117; --panel:#161b22; --panel2:#1c2230; --border:#30363d;
+    --text:#e6edf3; --muted:#8b949e; --accent:#3b82f6;
+    --crit:#f85149; --high:#ff7b3d; --med:#e3b341; --low:#58a6ff; --clean:#3fb950;
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--text);
+         font:14px/1.5 ui-sans-serif,system-ui,Segoe UI,Roboto,sans-serif; }
+  header { padding:16px 24px; border-bottom:1px solid var(--border);
+           display:flex; align-items:center; gap:12px; }
+  header h1 { font-size:18px; margin:0; font-weight:650; }
+  header .tag { font-size:11px; color:var(--muted); border:1px solid var(--border);
+                padding:2px 8px; border-radius:999px; }
+  .wrap { max-width:1000px; margin:0 auto; padding:24px; }
+  .panel { background:var(--panel); border:1px solid var(--border); border-radius:10px;
+           padding:18px; margin-bottom:18px; }
+  .panel h2 { font-size:13px; text-transform:uppercase; letter-spacing:.06em;
+              color:var(--muted); margin:0 0 12px; }
+  label { display:block; font-size:12px; color:var(--muted); margin:8px 0 4px; }
+  input[type=text], input[type=password] {
+    width:100%; padding:9px 11px; background:#0d1117; border:1px solid var(--border);
+    border-radius:7px; color:var(--text); font-size:14px; }
+  button { background:var(--accent); color:#fff; border:0; padding:9px 16px;
+           border-radius:7px; font-size:14px; font-weight:600; cursor:pointer; }
+  button:hover { filter:brightness(1.1); }
+  button:disabled { opacity:.5; cursor:not-allowed; }
+  button.ghost { background:transparent; border:1px solid var(--border); color:var(--text); }
+  .row { display:flex; gap:10px; align-items:flex-end; flex-wrap:wrap; }
+  .row > div { flex:1; min-width:160px; }
+  .msg { font-size:13px; margin-top:10px; min-height:18px; }
+  .msg.err { color:var(--crit); } .msg.ok { color:var(--clean); }
+  #drop { border:2px dashed var(--border); border-radius:10px; padding:34px;
+          text-align:center; color:var(--muted); cursor:pointer; transition:.15s; }
+  #drop.hover { border-color:var(--accent); background:var(--panel2); color:var(--text); }
+  #drop b { color:var(--text); }
+  .hidden { display:none !important; }
+  .verdict { display:flex; align-items:center; gap:16px; }
+  .score { font-size:40px; font-weight:800; line-height:1; }
+  .badge { padding:6px 14px; border-radius:999px; font-weight:700; font-size:14px;
+           text-transform:uppercase; letter-spacing:.04em; color:#0d1117; }
+  .kv { display:grid; grid-template-columns:140px 1fr; gap:4px 14px; font-size:13px; }
+  .kv div:nth-child(odd){ color:var(--muted); }
+  .mono { font-family:ui-monospace,SFMono-Regular,Consolas,monospace; word-break:break-all; }
+  .ind { border-left:4px solid var(--border); background:var(--panel2);
+         padding:10px 14px; border-radius:6px; margin-bottom:10px; }
+  .ind .h { display:flex; align-items:center; gap:10px; }
+  .sev { font-size:10px; font-weight:800; padding:2px 8px; border-radius:4px; color:#0d1117; }
+  .sev.critical{background:var(--crit)} .sev.high{background:var(--high)}
+  .sev.medium{background:var(--med)} .sev.low{background:var(--low)}
+  .ind .ttl { font-weight:650; } .ind .inf { color:var(--muted); font-size:13px; margin-top:4px; }
+  .ind .ev { color:var(--muted); font-size:12px; margin-top:4px; }
+  table { width:100%; border-collapse:collapse; font-size:13px; }
+  th,td { text-align:left; padding:6px 10px; border-bottom:1px solid var(--border); }
+  th { color:var(--muted); font-weight:600; }
+  .pill { display:inline-block; background:var(--panel2); border:1px solid var(--border);
+          padding:2px 8px; border-radius:999px; font-size:12px; margin:2px 4px 2px 0; }
+  .pill.danger { border-color:var(--high); color:var(--high); }
+  details summary { cursor:pointer; color:var(--muted); font-size:12px; }
+  pre { background:#0d1117; border:1px solid var(--border); border-radius:8px; padding:12px;
+        overflow:auto; font-size:12px; max-height:360px; }
+  .spin { width:16px;height:16px;border:2px solid var(--border);border-top-color:var(--accent);
+          border-radius:50%; display:inline-block; animation:s .8s linear infinite; vertical-align:-3px;}
+  @keyframes s { to { transform:rotate(360deg);} }
+  .muted{color:var(--muted)}
+</style>
+</head>
+<body>
+<header>
+  <h1>🛡️ Aegis Sandbox</h1>
+  <span class="tag">Static Analysis Console</span>
+  <span class="tag" id="who"></span>
+  <span style="flex:1"></span>
+  <button class="ghost hidden" id="logout">Sign out</button>
+</header>
+
+<div class="wrap">
+
+  <!-- AUTH -->
+  <div class="panel" id="authPanel">
+    <h2>Sign in</h2>
+    <div class="row">
+      <div><label>Username</label><input type="text" id="user" value="analyst" autocomplete="username"></div>
+      <div><label>Password</label><input type="password" id="pass" value="" autocomplete="current-password" placeholder="min 8 chars"></div>
+      <div style="flex:0"><button id="signin">Sign in / Register</button></div>
+    </div>
+    <div class="msg muted">First account created becomes admin. Credentials are only used to mint a local JWT.</div>
+    <div class="msg" id="authMsg"></div>
+  </div>
+
+  <!-- UPLOAD -->
+  <div class="panel hidden" id="uploadPanel">
+    <h2>Submit a sample</h2>
+    <div id="drop">
+      <p><b>Drop a file here</b> or click to choose</p>
+      <p class="muted">PE / ELF / APK supported. The file is <b>parsed only — never executed or installed.</b></p>
+      <input type="file" id="file" class="hidden">
+    </div>
+    <div class="row" style="margin-top:12px">
+      <div class="muted" id="fileName">No file selected</div>
+      <div style="flex:0">
+        <label style="display:inline">Profile</label>
+        <select id="profile" style="padding:8px 10px;background:#0d1117;border:1px solid var(--border);border-radius:7px;color:var(--text)">
+          <option value="static_only">Static only</option>
+          <option value="standard">Dynamic (detonate, APK)</option>
+        </select>
+      </div>
+      <div style="flex:0"><button id="analyze" disabled>Analyze</button></div>
+    </div>
+    <div class="msg muted">Dynamic detonation runs an APK and observes runtime behaviour. Requires a sandbox backend (Genymotion for real; otherwise a labelled simulation).</div>
+    <div class="msg" id="upMsg"></div>
+  </div>
+
+  <!-- RESULT -->
+  <div class="panel hidden" id="resultPanel">
+    <h2>Result</h2>
+    <div class="verdict">
+      <div class="score" id="score">—</div>
+      <div><span class="badge" id="badge">—</span>
+           <div class="muted" id="verdictSub" style="margin-top:6px"></div></div>
+      <span style="flex:1"></span>
+      <button id="explain" title="Generate a Claude-written analysis">✨ Explain with AI</button>
+    </div>
+    <div class="msg" id="aiMsg"></div>
+    <div id="aiWrap"></div>
+    <div style="height:14px"></div>
+    <div class="kv" id="fileInfo"></div>
+    <div id="indWrap" style="margin-top:18px"></div>
+    <div id="dynWrap"></div>
+    <div id="androidWrap"></div>
+    <div id="binWrap"></div>
+    <div id="iocWrap" style="margin-top:18px"></div>
+    <details style="margin-top:16px"><summary>Raw report JSON</summary><pre id="raw"></pre></details>
+  </div>
+
+</div>
+
+<script>
+const $ = s => document.querySelector(s);
+const tokenKey = "aegis_token", userKey = "aegis_user";
+let token = localStorage.getItem(tokenKey);
+let chosen = null;
+let currentAid = null;
+
+function setAuthed(on, username) {
+  $("#authPanel").classList.toggle("hidden", on);
+  $("#uploadPanel").classList.toggle("hidden", !on);
+  $("#logout").classList.toggle("hidden", !on);
+  $("#who").textContent = on ? ("● " + (username || localStorage.getItem(userKey) || "")) : "";
+}
+
+async function api(path, {method="GET", body=null, json=null}={}) {
+  const headers = {};
+  if (token) headers["Authorization"] = "Bearer " + token;
+  if (json) { headers["Content-Type"] = "application/json"; body = JSON.stringify(json); }
+  const r = await fetch(path, {method, headers, body});
+  if (r.status === 401) { logout(); throw new Error("session expired — sign in again"); }
+  const txt = await r.text();
+  let data; try { data = txt ? JSON.parse(txt) : {}; } catch { data = {raw:txt}; }
+  if (!r.ok) throw new Error(data.detail ? JSON.stringify(data.detail) : ("HTTP " + r.status));
+  return data;
+}
+
+function logout() {
+  token = null; localStorage.removeItem(tokenKey); setAuthed(false);
+}
+
+async function signin() {
+  const u = $("#user").value.trim(), p = $("#pass").value;
+  const m = $("#authMsg"); m.className = "msg"; m.textContent = "";
+  if (p.length < 8) { m.className="msg err"; m.textContent="password must be ≥ 8 chars"; return; }
+  try {
+    // Try login; if that fails, attempt to register (first-run bootstrap) then login.
+    try {
+      await login(u, p);
+    } catch {
+      const reg = await fetch("/v1/auth/register", {method:"POST",
+        headers:{"Content-Type":"application/json"},
+        body: JSON.stringify({username:u, password:p})});
+      if (reg.status === 201) {
+        await login(u, p);
+      } else if (reg.status === 409) {
+        throw new Error(`user "${u}" already exists — check the password`);
+      } else if (reg.status === 403) {
+        throw new Error("sign-up is disabled (an account already exists). Use that account, "
+                      + "or reset the local DB (delete aegis_local.db and restart).");
+      } else {
+        const d = await reg.json().catch(() => ({}));
+        throw new Error(d.detail ? JSON.stringify(d.detail) : ("registration failed: HTTP " + reg.status));
+      }
+    }
+    localStorage.setItem(userKey, u);
+    setAuthed(true, u);
+  } catch (e) { m.className="msg err"; m.textContent = "sign-in failed: " + e.message; }
+}
+
+async function login(u,p) {
+  const r = await fetch("/v1/auth/token", {method:"POST",
+    headers:{"Content-Type":"application/x-www-form-urlencoded"},
+    body: new URLSearchParams({username:u, password:p})});
+  if (!r.ok) throw new Error("bad credentials");
+  const d = await r.json();
+  token = d.access_token; localStorage.setItem(tokenKey, token);
+}
+
+// ---- upload + analyze ----
+function pick(f) {
+  chosen = f;
+  $("#fileName").textContent = f ? `${f.name} — ${f.size.toLocaleString()} bytes` : "No file selected";
+  $("#analyze").disabled = !f;
+}
+const drop = $("#drop");
+drop.addEventListener("click", () => $("#file").click());
+$("#file").addEventListener("change", e => pick(e.target.files[0]));
+["dragover","dragenter"].forEach(ev => drop.addEventListener(ev, e => {e.preventDefault(); drop.classList.add("hover");}));
+["dragleave","drop"].forEach(ev => drop.addEventListener(ev, e => {e.preventDefault(); drop.classList.remove("hover");}));
+drop.addEventListener("drop", e => { if (e.dataTransfer.files[0]) pick(e.dataTransfer.files[0]); });
+
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+async function analyze() {
+  if (!chosen) return;
+  const m = $("#upMsg"); m.className="msg"; $("#analyze").disabled = true;
+  $("#resultPanel").classList.add("hidden");
+  try {
+    m.innerHTML = '<span class="spin"></span> uploading…';
+    const fd = new FormData(); fd.append("file", chosen);
+    const sample = await api("/v1/samples", {method:"POST", body:fd});
+
+    const profile = $("#profile").value;
+    m.innerHTML = profile === "static_only"
+      ? '<span class="spin"></span> analyzing (parse only, not executed)…'
+      : '<span class="spin"></span> static analysis + detonating…';
+    let an = await api("/v1/analyses", {method:"POST", json:{sample_id:sample.id, profile}});
+    const terminal = ["completed","failed_processing","failed_runtime","terminated_policy"];
+    let tries = 0;
+    while (!terminal.includes(an.state) && tries++ < 120) { await sleep(400); an = await api("/v1/analyses/"+an.id); }
+
+    if (an.state !== "completed") throw new Error("analysis ended in state: " + an.state + (an.error?(" — "+an.error):""));
+    const report = await api("/v1/analyses/"+an.id+"/report");
+    m.className="msg ok"; m.textContent = "done";
+    render(an, report);
+
+    // Pull the dynamic report if a detonation profile was used.
+    if (profile !== "static_only") {
+      try {
+        const dyn = await api("/v1/analyses/"+an.id+"/dynamic");
+        renderDynamic(dyn);
+      } catch (e) {
+        $("#dynWrap").innerHTML = `<div class="panel" style="margin-top:14px"><h2>Dynamic analysis</h2>`
+          + `<div class="muted">No detonation ran — ${esc(String(e.message))}. `
+          + `Set a sandbox backend (SANDBOX_BACKEND=fake to simulate, or install Genymotion for real).</div></div>`;
+      }
+    }
+  } catch (e) {
+    m.className="msg err"; m.textContent = "error: " + e.message;
+  } finally { $("#analyze").disabled = false; }
+}
+
+// ---- render ----
+function verdictFor(score) {
+  if (score >= 70) return ["CRITICAL", "var(--crit)"];
+  if (score >= 50) return ["HIGH", "var(--high)"];
+  if (score >= 25) return ["MEDIUM", "var(--med)"];
+  if (score > 0)   return ["LOW", "var(--low)"];
+  return ["CLEAN", "var(--clean)"];
+}
+const esc = s => String(s ?? "").replace(/[&<>]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;"}[c]));
+
+function render(an, r) {
+  currentAid = an.id;
+  $("#aiWrap").innerHTML = "";
+  $("#aiMsg").textContent = "";
+  $("#dynWrap").innerHTML = "";
+  const score = an.risk_score ?? 0;
+  const [label, color] = verdictFor(score);
+  $("#score").textContent = score.toFixed ? score.toFixed(1) : score;
+  $("#score").style.color = color;
+  const b = $("#badge"); b.textContent = label; b.style.background = color;
+  $("#verdictSub").textContent = `${r.indicators.length} indicator(s) · ${r.iocs.length} IOC(s) · risk ${score}/100`;
+
+  const h = r.hashes || {};
+  $("#fileInfo").innerHTML = `
+    <div>File type</div><div>${esc(r.file_type)} <span class="muted">(${esc(r.detected_mime||"")})</span></div>
+    <div>Size</div><div>${(r.size||0).toLocaleString()} bytes</div>
+    <div>SHA256</div><div class="mono">${esc(h.sha256||"")}</div>
+    ${h.imphash?`<div>imphash</div><div class="mono">${esc(h.imphash)}</div>`:""}
+    ${h.tlsh?`<div>TLSH</div><div class="mono">${esc(h.tlsh)}</div>`:""}
+    <div>Entropy</div><div>${r.entropy?.overall ?? "—"} <span class="muted">(packing: ${esc(r.entropy?.packing_likelihood||"")})</span></div>
+    <div>Target OS</div><div>${esc(an.target_os || "—")}</div>`;
+
+  // indicators
+  $("#indWrap").innerHTML = r.indicators.length
+    ? "<h2>Findings</h2>" + r.indicators.map(i => `
+        <div class="ind" style="border-left-color:${({critical:'var(--crit)',high:'var(--high)',medium:'var(--med)',low:'var(--low)'})[i.severity]}">
+          <div class="h"><span class="sev ${i.severity}">${i.severity}</span><span class="ttl">${esc(i.title)}</span></div>
+          ${i.inference?`<div class="inf">${esc(i.inference)}</div>`:""}
+          ${(i.evidence&&i.evidence.length)?`<div class="ev mono">evidence: ${i.evidence.slice(0,8).map(esc).join(" · ")}</div>`:""}
+        </div>`).join("")
+    : `<h2>Findings</h2><div class="muted">No heuristic indicators raised.</div>`;
+
+  // android block
+  const a = r.apk;
+  $("#androidWrap").innerHTML = a ? `
+    <h2 style="margin-top:18px">Android</h2>
+    <div class="kv">
+      <div>Package</div><div class="mono">${esc(a.package)} <span class="muted">v${esc(a.version_name)}/${esc(a.version_code)}</span></div>
+      <div>SDK</div><div>min ${esc(a.min_sdk)} / target ${esc(a.target_sdk)}</div>
+      <div>Main activity</div><div class="mono">${esc(a.main_activity)}</div>
+      <div>Components</div><div>${a.activities} act · ${a.services} svc · ${a.receivers} rcv · ${a.providers} prov</div>
+      <div>Accessibility</div><div>${a.requests_accessibility} &nbsp; Device admin: ${a.requests_device_admin}</div>
+      <div>DEX / native</div><div>${a.dex_count} dex · ${(a.uses_native_libs||[]).length} .so</div>
+      <div>Signer</div><div class="mono">${esc((a.certificates&&a.certificates[0]&&a.certificates[0].subject)||"—")}</div>
+    </div>
+    <div style="margin-top:8px">Permissions (${(a.permissions||[]).length}):
+      ${(a.permissions||[]).length ? (a.permissions.map(p =>
+         `<span class="pill ${a.dangerous_permissions.includes(p)?'danger':''}">${esc(p.replace('android.permission.',''))}</span>`).join(""))
+       : '<span class="muted">none declared</span>'}</div>
+    ${(a.suspicious_apis||[]).length?`<div style="margin-top:8px">Suspicious APIs: ${a.suspicious_apis.map(x=>`<span class="pill">${esc(x)}</span>`).join("")}</div>`:""}
+  ` : "";
+
+  // PE / ELF block (concise)
+  const bin = r.pe || r.elf;
+  $("#binWrap").innerHTML = bin ? `
+    <h2 style="margin-top:18px">${r.pe?"PE":"ELF"} structure</h2>
+    <div class="kv">
+      ${r.pe?`<div>Machine</div><div>${esc(r.pe.machine)}</div><div>Subsystem</div><div>${esc(r.pe.subsystem)}</div><div>Signed</div><div>${r.pe.is_signed}</div>`:""}
+      ${r.elf?`<div>Arch</div><div>${esc(r.elf.arch)}</div><div>Type</div><div>${esc(r.elf.elf_type)}</div><div>Stripped</div><div>${r.elf.is_stripped}</div>`:""}
+      <div>Sections</div><div>${(bin.sections||[]).map(s=>esc(s.name)).join(", ")}</div>
+    </div>` : "";
+
+  // IOCs
+  $("#iocWrap").innerHTML = r.iocs.length ? `
+    <h2>Indicators of Compromise</h2>
+    <table><thead><tr><th>Type</th><th>Value</th><th>Conf</th><th>Source</th></tr></thead><tbody>
+    ${r.iocs.map(i=>`<tr><td>${esc(i.type)}</td><td class="mono">${esc(i.value)}</td><td>${i.confidence}</td><td class="muted">${esc(i.source)}</td></tr>`).join("")}
+    </tbody></table>` : "";
+
+  $("#raw").textContent = JSON.stringify(r, null, 2);
+  $("#resultPanel").classList.remove("hidden");
+  $("#resultPanel").scrollIntoView({behavior:"smooth"});
+}
+
+// ---- AI understanding ----
+async function explain() {
+  if (!currentAid) return;
+  const m = $("#aiMsg"); m.className = "msg";
+  $("#explain").disabled = true;
+  try {
+    m.innerHTML = '<span class="spin"></span> asking Claude to analyze the findings…';
+    let data;
+    try {
+      data = await api(`/v1/analyses/${currentAid}/understanding`, {method:"POST"});
+    } catch (e) {
+      // already generated? fall back to the stored one
+      if (String(e.message).includes("409")) data = await api(`/v1/analyses/${currentAid}/understanding`);
+      else throw e;
+    }
+    m.className = "msg ok"; m.textContent = `generated by ${data.model}` + (data.review_required ? " · human review required" : "");
+    renderUnderstanding(data);
+  } catch (e) {
+    m.className = "msg err"; m.textContent = "AI error: " + e.message;
+  } finally { $("#explain").disabled = false; }
+}
+
+function renderUnderstanding(data) {
+  const u = data.understanding || {};
+  const list = (arr) => (arr && arr.length)
+    ? "<ul style='margin:6px 0 0 18px'>" + arr.map(x => `<li>${esc(x)}</li>`).join("") + "</ul>" : "";
+  const wf = (u.behavior_workflow || []).map((s, i) => `
+      <div class="ind" style="border-left-color:var(--accent)">
+        <div class="h"><span class="sev" style="background:var(--accent)">${i+1}</span>
+          <span class="ttl">${esc(s.phase)} — ${esc(s.action)}</span></div>
+        ${s.evidence?`<div class="ev mono">evidence: ${esc(s.evidence)}</div>`:""}
+      </div>`).join("");
+  const att = (u.attack_techniques || []).map(t =>
+      `<div class="ind"><div class="h"><span class="pill">${esc(t.technique_id)}</span>
+        <span class="ttl">${esc(t.name)}</span></div>
+        ${t.why?`<div class="inf">${esc(t.why)}</div>`:""}</div>`).join("");
+  $("#aiWrap").innerHTML = `
+    <div class="panel" style="background:var(--panel2); margin-top:14px">
+      <h2>🧠 AI understanding <span class="muted" style="text-transform:none">— confidence: ${esc(u.confidence||"?")}</span></h2>
+      <p>${esc(u.summary)}</p>
+      <div class="kv">
+        <div>What it is</div><div>${esc(u.what_it_is)}</div>
+        <div>Intent</div><div>${esc(u.intent)}</div>
+        <div>Risk</div><div>${esc(u.risk_assessment)}</div>
+      </div>
+      ${u.capabilities&&u.capabilities.length?`<h2 style="margin-top:16px">Capabilities</h2>${list(u.capabilities)}`:""}
+      ${wf?`<h2 style="margin-top:16px">Behaviour workflow</h2>${wf}`:""}
+      ${att?`<h2 style="margin-top:16px">MITRE ATT&CK</h2>${att}`:""}
+      ${u.recommended_actions&&u.recommended_actions.length?`<h2 style="margin-top:16px">Recommended actions</h2>${list(u.recommended_actions)}`:""}
+      ${u.limitations&&u.limitations.length?`<h2 style="margin-top:16px">Limitations</h2>${list(u.limitations)}`:""}
+    </div>`;
+}
+
+// ---- dynamic (detonation) report ----
+function renderDynamic(d) {
+  const env = d.environment || {};
+  const simulated = env.backend === "fake";
+  const peers = (d.network_peers || []).map(p =>
+      `<span class="pill danger">${esc(p.host)}${p.port?(":"+p.port):""}</span>`).join("") || '<span class="muted">none</span>';
+  const perms = (d.granted_permissions || []).map(p =>
+      `<span class="pill">${esc(p.replace("android.permission.",""))}</span>`).join("") || '<span class="muted">none</span>';
+  const sevColor = {critical:'var(--crit)',high:'var(--high)',medium:'var(--med)',low:'var(--low)'};
+  const findings = (d.indicators || []).map(i => `
+      <div class="ind" style="border-left-color:${sevColor[i.severity]||'var(--border)'}">
+        <div class="h"><span class="sev ${i.severity}">${i.severity}</span><span class="ttl">${esc(i.title)}</span></div>
+        ${i.inference?`<div class="inf">${esc(i.inference)}</div>`:""}
+        ${(i.evidence&&i.evidence.length)?`<div class="ev mono">${i.evidence.slice(0,6).map(esc).join(" · ")}</div>`:""}
+      </div>`).join("");
+  const events = (d.events || []).slice(0, 60).map(e => `
+      <tr><td class="muted">${esc((e.timestamp||"").replace("T"," ").slice(11,19))}</td>
+          <td><span class="pill">${esc(e.category)}</span></td>
+          <td>${esc(e.action)}</td>
+          <td class="mono">${esc((e.object&&e.object.value)||"")}</td></tr>`).join("");
+
+  $("#dynWrap").innerHTML = `
+    <div class="panel" style="background:var(--panel2); margin-top:18px">
+      <h2>⚙️ Dynamic analysis (runtime behaviour)</h2>
+      ${simulated ? `<div class="ind" style="border-left-color:var(--med)">
+        <b style="color:var(--med)">⚠ SIMULATED telemetry (fake backend)</b>
+        <div class="muted">This is canned demo data to exercise the pipeline — NOT this sample's real
+        runtime behaviour. Install Genymotion + adb + frida and set SANDBOX_BACKEND=genymotion for real detonation.</div>
+      </div>` : ""}
+      <div class="kv">
+        <div>Backend</div><div>${esc(env.backend)} ${env.device?("· "+esc(env.device)):""}</div>
+        <div>Exit reason</div><div>${esc(d.exit_reason)} · ${d.runtime_seconds||0}s · ${d.event_count||0} events</div>
+        <div>Network peers</div><div>${peers}</div>
+        <div>Granted perms</div><div>${perms}</div>
+        <div>Dropped files</div><div class="mono">${(d.dropped_files||[]).map(esc).join("<br>")||'<span class="muted">none</span>'}</div>
+        <div>Loaded DEX</div><div class="mono">${(d.loaded_dex||[]).map(esc).join("<br>")||'<span class="muted">none</span>'}</div>
+      </div>
+      ${findings?`<h2 style="margin-top:16px">Runtime findings</h2>${findings}`:""}
+      ${events?`<h2 style="margin-top:16px">Event timeline (first 60)</h2>
+        <table><thead><tr><th>Time</th><th>Category</th><th>Action</th><th>Target</th></tr></thead>
+        <tbody>${events}</tbody></table>`:""}
+    </div>`;
+}
+
+$("#explain").addEventListener("click", explain);
+$("#signin").addEventListener("click", signin);
+$("#pass").addEventListener("keydown", e => { if (e.key==="Enter") signin(); });
+$("#logout").addEventListener("click", logout);
+$("#analyze").addEventListener("click", analyze);
+
+// restore session — verify any stored token is still valid (DB may have been reset)
+async function boot() {
+  if (!token) { setAuthed(false); return; }
+  try { const me = await api("/v1/auth/me"); setAuthed(true, me.username); }
+  catch { logout(); }
+}
+boot();
+</script>
+</body>
+</html>

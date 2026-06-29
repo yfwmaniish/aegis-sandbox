@@ -38,19 +38,21 @@ _MIME = {
 
 
 def _zip_is_apk(data: bytes) -> bool:
+    """An installable APK is defined by a root ``AndroidManifest.xml``. We deliberately
+    do NOT trust the ``.apk`` extension: decompiled/repackaging project archives
+    (apktool/APKEditor) are named ``.apk`` but have no root manifest — feeding those to
+    the APK parser yields garbage, so they must route to the ZIP/archive analyzer."""
     try:
         with zipfile.ZipFile(BytesIO(data)) as zf:
-            names = set(zf.namelist())
-        return "AndroidManifest.xml" in names and any(
-            n == "classes.dex" or n.startswith("classes") and n.endswith(".dex") for n in names
-        )
+            names = zf.namelist()
     except (zipfile.BadZipFile, OSError):
         return False
+    return "AndroidManifest.xml" in names
 
 
 def detect_file_type(data: bytes, filename: str | None = None) -> FileType:
-    """Return the :class:`FileType` for ``data`` using magic bytes (extension is
-    only consulted to disambiguate generic ZIP archives)."""
+    """Return the :class:`FileType` for ``data`` using magic bytes (and the real ZIP
+    contents to tell a true APK from a generic/project archive)."""
     if len(data) >= 4:
         head4 = data[:4]
         if head4 in _MACHO_MAGICS:
@@ -62,12 +64,7 @@ def detect_file_type(data: bytes, filename: str | None = None) -> FileType:
     if data[:2] == _MZ:
         return FileType.PE
     if data[:4] in (_ZIP, _ZIP_EMPTY):
-        if _zip_is_apk(data):
-            return FileType.APK
-        # Extension hint: a .apk that failed the manifest probe is still likely APK.
-        if filename and filename.lower().endswith(".apk"):
-            return FileType.APK
-        return FileType.ZIP
+        return FileType.APK if _zip_is_apk(data) else FileType.ZIP
     return FileType.UNKNOWN
 
 

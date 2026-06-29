@@ -25,6 +25,10 @@ def _print_summary(report) -> None:
     print(f"analyzers     : {', '.join(report.analyzers_run) or '(none)'}")
     if report.analyzer_errors:
         print(f"errors        : {report.analyzer_errors}")
+
+    if report.apk:
+        _print_apk(report.apk)
+
     print(f"strings       : {report.strings.count}"
           f"{' (truncated)' if report.strings.truncated else ''}")
     print(f"iocs          : {len(report.iocs)}")
@@ -39,6 +43,53 @@ def _print_summary(report) -> None:
             print(f"       -> {ind.inference}")
 
 
+def _print_apk(a) -> None:
+    print("--- android ---")
+    print(f"package       : {a.package}  (v{a.version_name}/{a.version_code})")
+    print(f"sdk           : min {a.min_sdk} / target {a.target_sdk}")
+    print(f"main_activity : {a.main_activity}")
+    print(f"permissions   : {len(a.permissions)} total, {len(a.dangerous_permissions)} dangerous")
+    for p in a.dangerous_permissions:
+        print(f"   ! {p}")
+    print(f"components    : {a.activities} act / {a.services} svc / "
+          f"{a.receivers} rcv / {a.providers} prov")
+    exported = [(c.type, c.name) for c in a.components if c.exported]
+    if exported:
+        print(f"exported      : {exported}")
+    print(f"accessibility : {a.requests_accessibility}   device_admin: {a.requests_device_admin}")
+    print(f"native libs   : {a.uses_native_libs or '(none)'}   dex: {a.dex_count}")
+    if a.suspicious_apis:
+        print(f"suspicious API: {len(a.suspicious_apis)}")
+        for api in a.suspicious_apis:
+            print(f"   - {api}")
+    for c in a.certificates:
+        print(f"signer        : {c.subject}  (debug={c.is_debug_cert})")
+
+
+def _doctor() -> int:
+    """Report dynamic-analysis toolchain readiness."""
+    from aegis.orchestrator.genymotion import GenymotionOrchestrator
+
+    print("Aegis dynamic-analysis preflight")
+    print("=" * 40)
+    status = GenymotionOrchestrator.preflight()
+    all_ok = True
+    for tool, ok in status.items():
+        print(f"  [{'OK ' if ok else 'MISSING'}] {tool}")
+        all_ok = all_ok and ok
+    print()
+    if all_ok:
+        print("All tools present — Genymotion detonation available.")
+    else:
+        print("Install the missing pieces for real detonation:")
+        print("  - Genymotion Desktop (provides 'gmtool')   https://www.genymotion.com")
+        print("  - Android platform-tools (provides 'adb')")
+        print("  - pip install frida-tools  (+ frida-server on the device image)")
+        print("\nWithout them, set SANDBOX_BACKEND=fake to exercise the dynamic pipeline,")
+        print("or leave it unset for static-only analysis.")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="aegis", description="Aegis static analysis engine")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -48,7 +99,12 @@ def main(argv: list[str] | None = None) -> int:
     a.add_argument("--json", action="store_true", help="emit the full JSON report")
     a.add_argument("--min-len", type=int, default=5, help="minimum string length")
 
+    sub.add_parser("doctor", help="check the dynamic-analysis toolchain (Genymotion/adb/frida)")
+
     args = parser.parse_args(argv)
+
+    if args.command == "doctor":
+        return _doctor()
 
     if args.command == "analyze":
         try:

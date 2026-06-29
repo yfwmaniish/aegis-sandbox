@@ -19,7 +19,17 @@ from aegis.api.schemas import (
     TimelineEntry,
     TimelinePage,
 )
-from aegis.db.models import Analysis, AuditLog, Finding, IOCRow, Sample, StaticReportRow, User
+from aegis.db.models import (
+    AIUnderstandingRow,
+    Analysis,
+    AuditLog,
+    DynamicReportRow,
+    Finding,
+    IOCRow,
+    Sample,
+    StaticReportRow,
+    User,
+)
 from aegis.db.persistence import append_audit
 from aegis.worker.tasks import enqueue_static_analysis
 
@@ -133,6 +143,104 @@ def get_report(
             detail="report not available yet (analysis not completed)",
         )
     return row.report
+
+
+@router.get("/{analysis_id}/dynamic")
+def get_dynamic_report(
+    analysis_id: uuid.UUID,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Return the dynamic (detonation) report: normalized event stream, behaviour
+    roll-ups and runtime findings. 409 until a detonation run has completed."""
+    _get_analysis_or_404(db, analysis_id)
+    row = db.execute(
+        select(DynamicReportRow).where(DynamicReportRow.analysis_id == analysis_id)
+    ).scalar_one_or_none()
+    if row is None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="no dynamic report (analysis was static-only or has not detonated)",
+        )
+    return row.report
+
+
+@router.post("/{analysis_id}/understanding", status_code=status.HTTP_201_CREATED)
+def generate_understanding(
+    analysis_id: uuid.UUID,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Generate (and store) a Claude-written understanding of the analysis: what the
+    sample is, its behaviour workflow, ATT&CK mapping, risk, and defensive actions.
+    Requires ANTHROPIC_API_KEY; human-review-required (FR-13 / TR-REP-03)."""
+    _get_analysis_or_404(db, analysis_id)
+    static_row = db.execute(
+        select(StaticReportRow).where(StaticReportRow.analysis_id == analysis_id)
+    ).scalar_one_or_none()
+    if static_row is None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="analysis has no report yet (not completed)",
+        )
+    dyn_row = db.execute(
+        select(DynamicReportRow).where(DynamicReportRow.analysis_id == analysis_id)
+    ).scalar_one_or_none()
+
+    from aegis.ai import generate_understanding as _generate
+
+    result = _generate(static_row.report, dyn_row.report if dyn_row else None)
+    if not result.available:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=result.reason or "AI understanding unavailable",
+        )
+
+    payload = result.understanding.model_dump(mode="json")
+    existing = db.execute(
+        select(AIUnderstandingRow).where(AIUnderstandingRow.analysis_id == analysis_id)
+    ).scalar_one_or_none()
+    if existing is not None:
+        existing.understanding = payload
+        existing.model = result.model
+        existing.prompt_version = result.prompt_version
+        existing.generated_by = user.username
+    else:
+        db.add(AIUnderstandingRow(
+            analysis_id=analysis_id, model=result.model,
+            prompt_version=result.prompt_version, review_required=result.review_required,
+            generated_by=user.username, understanding=payload,
+        ))
+    append_audit(db, actor=user.username, action="ai_understanding_generated",
+                 analysis_id=analysis_id, detail={"model": result.model})
+    db.commit()
+    return {
+        "model": result.model, "prompt_version": result.prompt_version,
+        "review_required": result.review_required, "understanding": payload,
+    }
+
+
+@router.get("/{analysis_id}/understanding")
+def get_understanding(
+    analysis_id: uuid.UUID,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Return the stored AI understanding (409 if none generated yet)."""
+    _get_analysis_or_404(db, analysis_id)
+    row = db.execute(
+        select(AIUnderstandingRow).where(AIUnderstandingRow.analysis_id == analysis_id)
+    ).scalar_one_or_none()
+    if row is None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="no AI understanding generated yet (POST to generate)",
+        )
+    return {
+        "model": row.model, "prompt_version": row.prompt_version,
+        "review_required": row.review_required, "generated_at": row.created_at,
+        "understanding": row.understanding,
+    }
 
 
 @router.get("/{analysis_id}/timeline", response_model=TimelinePage)

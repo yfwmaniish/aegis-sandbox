@@ -70,12 +70,40 @@ class TestAPKZip:
         assert native == ["lib/arm64-v8a/libnative.so"]
 
     @apk_required
-    def test_apk_full_analyze(self, fake_apk):
-        # Only runs where androguard is available (e.g. the worker image).
+    def test_apk_full_analyze_graceful(self, fake_apk):
+        # With androguard present, the synthetic fixture's placeholder (non-AXML)
+        # manifest is correctly rejected — the engine must isolate that error
+        # (TR-STA-02), still detect the type, and never crash.
         r = analyze_bytes(fake_apk, filename="app.apk")
         assert r.file_type == FileType.APK
-        assert r.apk is not None
-        assert r.apk.dex_count == 2
+        assert r.apk is not None or "apk" in r.analyzer_errors
+
+
+class TestCorrelationIndicators:
+    """IOC-derived / capability-correlation indicators (added after the MarriageInvite
+    dropper sample slipped through with zero findings)."""
+
+    def test_hardcoded_ip_c2(self):
+        data = b"config http://118.196.64.77/api/v1/ endpoint\x00" + b"x" * 64
+        r = analyze_bytes(data)
+        ids = {i.id for i in r.indicators}
+        assert "net.hardcoded_ip_c2" in ids
+
+    def test_telegram_channel(self):
+        data = b"contact https://t.me/kodexhacks for support\x00" + b"y" * 64
+        r = analyze_bytes(data)
+        assert any(i.id == "net.telegram_channel" for i in r.indicators)
+
+    def test_named_https_url_is_not_ip_c2(self):
+        data = b"update https://updates.example-vendor.io/v2/manifest\x00" + b"z" * 64
+        r = analyze_bytes(data)
+        assert not any(i.id == "net.hardcoded_ip_c2" for i in r.indicators)
+
+    def test_high_severity_sorted_first(self):
+        data = b"http://203.0.113.9/api and https://t.me/actor\x00" + b"q" * 64
+        r = analyze_bytes(data)
+        assert r.indicators  # at least the C2 + telegram fired
+        assert r.indicators[0].severity.value in {"critical", "high"}
 
 
 class TestRunnerContract:

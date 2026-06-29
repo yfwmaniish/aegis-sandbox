@@ -7,11 +7,16 @@ on startup for convenience; in deployment, schema is managed by Alembic migratio
 from __future__ import annotations
 
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import FastAPI
+from fastapi.responses import RedirectResponse
+from fastapi.staticfiles import StaticFiles
 
 from aegis.core.config import get_settings
 from aegis.db.base import Base, get_engine
+
+_STATIC_DIR = Path(__file__).parent / "static"
 
 
 @asynccontextmanager
@@ -44,9 +49,15 @@ def create_app() -> FastAPI:
     def health():
         return {"status": "ok", "env": settings.env, "version": "0.1.0"}
 
-    @app.get("/", tags=["meta"])
+    @app.get("/", include_in_schema=False)
     def root():
-        return {"service": "aegis-sandbox", "docs": "/docs"}
+        # Send users to the console UI; API docs remain at /docs.
+        return RedirectResponse(url="/ui/")
+
+    # Web console (vanilla single-page app talking to /v1). html=True serves index.html
+    # at the mount root.
+    if _STATIC_DIR.is_dir():
+        app.mount("/ui", StaticFiles(directory=str(_STATIC_DIR), html=True), name="ui")
 
     return app
 

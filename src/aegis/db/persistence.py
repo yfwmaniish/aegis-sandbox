@@ -15,24 +15,26 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from aegis.core.state import StateTransition
-from aegis.db.models import Analysis, AuditLog, Finding, IOCRow, StaticReportRow
-from aegis.static.models import StaticReport
+from aegis.db.models import Analysis, AuditLog, DynamicReportRow, Finding, IOCRow, StaticReportRow
+from aegis.static.models import StaticReport, SuspiciousIndicator
 
 _SEVERITY_WEIGHT = {"low": 1.0, "medium": 3.0, "high": 6.0, "critical": 10.0}
 
 
-def compute_risk_score(report: StaticReport) -> float:
-    """Aggregate indicators into a 0–100 risk score.
+def compute_risk(indicators: list[SuspiciousIndicator]) -> float:
+    """Aggregate any set of indicators into a 0–100 risk score.
 
     Weighted sum of ``severity_weight * confidence`` squashed through saturation so a
     handful of high-severity hits dominates, but no single finding pins the score to
     100. Deterministic and explainable (each indicator is persisted alongside)."""
-    raw = sum(
-        _SEVERITY_WEIGHT.get(i.severity.value, 1.0) * i.confidence for i in report.indicators
-    )
-    # Saturating curve: 0 -> 0, ~15 weighted points -> ~75, asymptotic to 100.
+    raw = sum(_SEVERITY_WEIGHT.get(i.severity.value, 1.0) * i.confidence for i in indicators)
     score = 100.0 * (1.0 - 1.0 / (1.0 + raw / 8.0))
     return round(score, 1)
+
+
+def compute_risk_score(report: StaticReport) -> float:
+    """Risk score from a static report's indicators (kept for back-compat)."""
+    return compute_risk(report.indicators)
 
 
 def persist_static_report(session: Session, analysis: Analysis, report: StaticReport) -> float:
@@ -73,6 +75,51 @@ def persist_static_report(session: Session, analysis: Analysis, report: StaticRe
     score = compute_risk_score(report)
     analysis.risk_score = score
     return score
+
+
+def persist_dynamic_report(session: Session, analysis: Analysis, report) -> list:
+    """Write the dynamic report blob, runtime findings and network IOCs.
+
+    ``report`` is an :class:`aegis.dynamic.models.DynamicReport`. Returns its indicators
+    so the caller can fold them into the combined risk score."""
+    session.add(DynamicReportRow(
+        analysis_id=analysis.id,
+        schema_version=report.schema_version,
+        backend=report.environment.backend,
+        exit_reason=report.exit_reason,
+        event_count=report.event_count,
+        report=json.loads(report.model_dump_json()),
+    ))
+
+    for ind in report.indicators:
+        session.add(Finding(
+            analysis_id=analysis.id,
+            detector="dynamic",
+            detector_version=report.schema_version,
+            type=ind.id,
+            title=ind.title,
+            severity=ind.severity.value,
+            confidence=ind.confidence,
+            observed_facts=ind.observed_facts,
+            inference=ind.inference,
+            evidence_refs=ind.evidence,
+        ))
+
+    # Network peers observed at runtime are high-value IOCs.
+    for peer in report.network_peers:
+        session.add(IOCRow(
+            analysis_id=analysis.id,
+            type="ip" if _looks_like_ip(peer.host) else "domain",
+            value=peer.host[:2048],
+            confidence=0.7,
+            source="dynamic",
+        ))
+    return list(report.indicators)
+
+
+def _looks_like_ip(host: str) -> bool:
+    parts = host.split(".")
+    return len(parts) == 4 and all(p.isdigit() for p in parts)
 
 
 def _hash_entry(prev_hash: str | None, payload: dict) -> str:

@@ -22,6 +22,10 @@ htmlcov/
 /data/
 /artifacts/
 /samples/
+"Tesk APK/"
+*.db
+*.sqlite
+*.sqlite3
 *.pcap
 *.exe
 *.dll
