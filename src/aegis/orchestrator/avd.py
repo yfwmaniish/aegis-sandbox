@@ -42,6 +42,13 @@ _HOOKS_JS = Path(__file__).resolve().parent.parent / "dynamic" / "agent" / "hook
 _DEFAULT_PORT = 5554
 
 
+def _read_tail(path: Path, n: int = 25) -> str:
+    try:
+        return "\n".join(path.read_text(encoding="utf-8", errors="replace").splitlines()[-n:])
+    except OSError:
+        return "(emulator log unavailable)"
+
+
 class AvdUnavailable(RuntimeError):
     """Raised when the Android SDK emulator / adb tooling is not available."""
 
@@ -98,16 +105,32 @@ class AvdOrchestrator(SandboxOrchestrator):
         name = spec.image or self.avd_name
         serial = f"emulator-{_DEFAULT_PORT}"
 
-        # Boot a clean AVD (wipe user data each run = our snapshot-rollback equivalent).
-        subprocess.Popen(
+        # Clear any prior instance on this port (best-effort), then boot a clean AVD
+        # (wipe user data each run = our snapshot-rollback equivalent).
+        run([self._bin("adb"), "-s", serial, "emu", "kill"], timeout=15)
+
+        # The emulator needs ANDROID_SDK_ROOT in its *environment* (the .env value only
+        # reaches app settings); without it the emulator exits instantly. Capture output
+        # to a log so a boot failure surfaces a reason instead of a silent hang.
+        env = dict(os.environ)
+        if self._sdk_root:
+            env["ANDROID_SDK_ROOT"] = self._sdk_root
+            env["ANDROID_HOME"] = self._sdk_root
+        log_path = Path(tempfile.gettempdir()) / f"aegis-emulator-{serial}.log"
+        log_fh = open(log_path, "w", encoding="utf-8", errors="replace")  # noqa: SIM115
+        proc = subprocess.Popen(
             [self._bin("emulator"), "-avd", name, "-port", str(_DEFAULT_PORT),
              "-no-window", "-no-audio", "-no-boot-anim", "-no-snapshot", "-wipe-data",
-             "-netdelay", "none", "-netspeed", "full"],
-            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+             "-gpu", "swiftshader_indirect", "-netdelay", "none", "-netspeed", "full"],
+            stdout=log_fh, stderr=log_fh, env=env,
         )
-        if not self._wait_boot(serial, 300):
+        if not self._wait_boot(serial, 300, proc):
+            with contextlib.suppress(Exception):
+                proc.terminate()
             self._kill(serial)
-            raise AvdUnavailable(f"AVD '{name}' did not finish booting in time")
+            raise AvdUnavailable(
+                f"AVD '{name}' failed to boot. Emulator log tail:\n{_read_tail(log_path)}"
+            )
 
         # Root for Frida (works on AOSP / google_apis images, not playstore images).
         run([self._bin("adb"), "-s", serial, "root"], timeout=30)
@@ -195,14 +218,17 @@ class AvdOrchestrator(SandboxOrchestrator):
         return reaped
 
     # ── helpers ──────────────────────────────────────────────────────────────
-    def _wait_boot(self, serial: str, timeout: int) -> bool:
-        run([self._bin("adb"), "-s", serial, "wait-for-device"], timeout=timeout)
+    def _wait_boot(self, serial: str, timeout: int, proc: subprocess.Popen | None = None) -> bool:
+        """Poll until the device reports boot complete. Returns False fast if the
+        emulator process dies (so a launch failure surfaces in seconds, not minutes)."""
         deadline = time.time() + timeout
         while time.time() < deadline:
+            if proc is not None and proc.poll() is not None:
+                return False  # emulator exited early — caller reports the log tail
             r = run([self._bin("adb"), "-s", serial, "shell", "getprop", "sys.boot_completed"], timeout=10)
             if r.stdout.strip() == "1":
                 return True
-            time.sleep(2)
+            time.sleep(3)
         return False
 
     def _kill(self, serial: str | None) -> bool:
