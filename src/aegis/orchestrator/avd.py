@@ -84,9 +84,17 @@ class AvdOrchestrator(SandboxOrchestrator):
         return name  # let it fail with a clear error if truly missing
 
     # ── lifecycle ──────────────────────────────────────────────────────────────
+    def _have(self, name: str) -> bool:
+        """True if the tool resolves via PATH or ANDROID_SDK_ROOT (not just PATH)."""
+        return Path(self._bin(name)).exists()
+
     def provision(self, analysis_id: str, spec: EnvironmentSpec) -> SandboxSession:
-        if not have("adb"):
-            raise AvdUnavailable("adb not found. Install Android platform-tools and add to PATH.")
+        for tool in ("adb", "emulator"):
+            if not self._have(tool):
+                raise AvdUnavailable(
+                    f"{tool} not found on PATH or under ANDROID_SDK_ROOT "
+                    f"({self._sdk_root or 'unset'}). Install Android platform-tools/emulator."
+                )
         name = spec.image or self.avd_name
         serial = f"emulator-{_DEFAULT_PORT}"
 
