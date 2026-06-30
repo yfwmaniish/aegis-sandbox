@@ -26,6 +26,8 @@ htmlcov/
 *.db
 *.sqlite
 *.sqlite3
+/tools/frida-server
+/tools/*.xz
 *.pcap
 *.exe
 *.dll

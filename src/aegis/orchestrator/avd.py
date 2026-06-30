@@ -16,6 +16,7 @@ logcat + permissions only rather than failing.
 from __future__ import annotations
 
 import contextlib
+import os
 import shutil
 import subprocess
 import tempfile
@@ -66,13 +67,18 @@ class AvdOrchestrator(SandboxOrchestrator):
         return status
 
     def _bin(self, name: str) -> str:
-        """Resolve a tool from PATH, falling back to ANDROID_SDK_ROOT layout."""
+        """Resolve a tool from PATH, falling back to the ANDROID_SDK_ROOT layout.
+
+        The detonation runs in the server process, whose PATH may predate the SDK
+        install — so we resolve via ANDROID_SDK_ROOT too. On Windows the executables
+        carry a ``.exe`` suffix."""
         found = shutil.which(name)
         if found:
             return found
         if self._sdk_root:
             sub = {"emulator": "emulator", "adb": "platform-tools"}.get(name, "")
-            cand = Path(self._sdk_root) / sub / (name + (".exe" if name == "adb" else ""))
+            exe = name + (".exe" if os.name == "nt" else "")
+            cand = Path(self._sdk_root) / sub / exe
             if cand.exists():
                 return str(cand)
         return name  # let it fail with a clear error if truly missing
