@@ -30,6 +30,9 @@ class FileType(str, Enum):
     DEX = "dex"
     MACHO = "macho"
     ZIP = "zip"
+    PDF = "pdf"
+    OFFICE = "office"
+    SCRIPT = "script"
     UNKNOWN = "unknown"
 
 
@@ -178,6 +181,65 @@ class APKFeatures(BaseModel):
     dex_count: int = 0
 
 
+class PDFFeatures(BaseModel):
+    version: str | None = None
+    object_count: int = 0
+    stream_count: int = 0
+    is_encrypted: bool = False
+    has_javascript: bool = False
+    js_count: int = 0
+    has_openaction: bool = False
+    has_additional_actions: bool = False   # /AA
+    has_launch: bool = False
+    has_embedded_files: bool = False
+    embedded_count: int = 0
+    has_uri: bool = False
+    has_acroform: bool = False
+    has_xfa: bool = False
+    has_richmedia: bool = False            # Flash / embedded media
+    has_jbig2: bool = False                # historically exploited decoder
+    has_gotor: bool = False                # /GoToR remote go-to
+    keyword_counts: dict[str, int] = Field(default_factory=dict)
+
+
+class OfficeFeatures(BaseModel):
+    container: str = "unknown"             # ole | ooxml
+    doc_type: str | None = None            # word | excel | powerpoint | unknown
+    has_macros: bool = False
+    vba_extracted: bool = False            # whether macro *source* was recovered
+    macro_streams: list[str] = Field(default_factory=list)
+    macro_line_count: int = 0
+    auto_exec: list[str] = Field(default_factory=list)      # AutoOpen, Document_Open, ...
+    suspicious_keywords: list[str] = Field(default_factory=list)
+    has_dde: bool = False
+    external_targets: list[str] = Field(default_factory=list)  # remote template / links
+
+
+class ScriptFeatures(BaseModel):
+    language: str = "unknown"              # javascript|vbscript|powershell|batch|hta|wsf|shell
+    line_count: int = 0
+    char_count: int = 0
+    obfuscation_score: float = 0.0         # 0..1
+    obfuscation_indicators: list[str] = Field(default_factory=list)
+    suspicious_apis: list[str] = Field(default_factory=list)
+    has_base64_blobs: bool = False
+    longest_base64: int = 0
+
+
+class MachOFeatures(BaseModel):
+    magic: str | None = None
+    is_fat: bool = False
+    archs: list[str] = Field(default_factory=list)
+    filetype: str | None = None            # EXECUTE | DYLIB | BUNDLE | ...
+    ncmds: int = 0
+    linked_dylibs: list[str] = Field(default_factory=list)
+    rpaths: list[str] = Field(default_factory=list)
+    is_signed: bool = False
+    is_encrypted: bool = False             # LC_ENCRYPTION_INFO present
+    min_os: str | None = None
+    suspicious_imports: list[str] = Field(default_factory=list)
+
+
 # ── Top-level report ─────────────────────────────────────────────────────────
 
 
@@ -202,6 +264,10 @@ class StaticReport(BaseModel):
     pe: PEFeatures | None = None
     elf: ELFFeatures | None = None
     apk: APKFeatures | None = None
+    pdf: PDFFeatures | None = None
+    office: OfficeFeatures | None = None
+    script: ScriptFeatures | None = None
+    macho: MachOFeatures | None = None
 
     def add_error(self, module: str, exc: BaseException) -> None:
         self.analyzer_errors[module] = f"{type(exc).__name__}: {exc}"

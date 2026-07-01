@@ -82,6 +82,14 @@ def analyze_bytes(
         # Also scan decompressed entries: catches IOCs/APIs hidden in DEX/resources
         # that the raw-bytes string pass misses on large/compressed APKs.
         _run_with("archive", report, lambda: _populate_archive(report, data, iocs))
+    elif file_type == FileType.MACHO:
+        _run_with("macho", report, lambda: _populate_macho(report, data))
+    elif file_type == FileType.PDF:
+        _run_with("pdf", report, lambda: _populate_pdf(report, data))
+    elif file_type == FileType.OFFICE:
+        _run_with("office", report, lambda: _populate_office(report, data))
+    elif file_type == FileType.SCRIPT:
+        _run_with("script", report, lambda: _populate_script(report, data, filename))
     elif file_type == FileType.ZIP:
         # ZIP/APK-project archives (e.g. apktool/APKEditor output) — the payload lives
         # in decompressed smali/dex, not a parseable manifest.
@@ -164,6 +172,38 @@ def _populate_apk(report: StaticReport, data: bytes, iocs: list[IOC]) -> None:
     report.apk = feats
     report.indicators.extend(indicators)
     iocs.extend(apk_iocs)
+
+
+def _populate_macho(report: StaticReport, data: bytes) -> None:
+    from aegis.static import macho
+
+    feats, indicators = macho.analyze(data)
+    report.macho = feats
+    report.indicators.extend(indicators)
+
+
+def _populate_pdf(report: StaticReport, data: bytes) -> None:
+    from aegis.static import pdf
+
+    feats, indicators = pdf.analyze(data)
+    report.pdf = feats
+    report.indicators.extend(indicators)
+
+
+def _populate_office(report: StaticReport, data: bytes) -> None:
+    from aegis.static import office
+
+    feats, indicators = office.analyze(data)
+    report.office = feats
+    report.indicators.extend(indicators)
+
+
+def _populate_script(report: StaticReport, data: bytes, filename: str | None) -> None:
+    from aegis.static import script
+
+    feats, indicators = script.analyze(data, filename)
+    report.script = feats
+    report.indicators.extend(indicators)
 
 
 # Spyware capability categories -> substrings to look for in scanned API labels.

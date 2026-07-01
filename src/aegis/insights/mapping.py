@@ -137,6 +137,28 @@ ATTACK_MAP: dict[str, list[tuple[str, str, str]]] = {
     "pe.tiny_import_table": [("Defense Evasion", "T1027", "Obfuscated Files or Information")],
     "elf.stripped": [("Defense Evasion", "T1027", "Obfuscated Files or Information")],
     "elf.rpath_set": [("Hijack Execution Flow", "T1574.006", "Dynamic Linker Hijacking")],
+    # PDF
+    "pdf.javascript": [("Execution", "T1204.002", "User Execution: Malicious File")],
+    "pdf.auto_action": [("Execution", "T1204.002", "User Execution: Malicious File")],
+    "pdf.launch_action": [("Execution", "T1204.002", "User Execution: Malicious File")],
+    "pdf.embedded_file": [("Defense Evasion", "T1027", "Obfuscated Files or Information")],
+    "pdf.exploit_surface": [("Execution", "T1203", "Exploitation for Client Execution")],
+    # Office maldocs
+    "office.macros_present": [("Execution", "T1204.002", "User Execution: Malicious File")],
+    "office.auto_exec_macro": [("Execution", "T1059.005", "Command and Scripting Interpreter: Visual Basic")],
+    "office.suspicious_macro": [("Execution", "T1059.005", "Command and Scripting Interpreter: Visual Basic")],
+    "office.remote_template": [("Defense Evasion", "T1221", "Template Injection")],
+    "office.dde": [("Execution", "T1559.002", "Inter-Process Communication: Dynamic Data Exchange")],
+    # Scripts
+    "script.download_exec": [
+        ("Execution", "T1059.001", "Command and Scripting Interpreter: PowerShell"),
+        ("Command and Control", "T1105", "Ingress Tool Transfer")],
+    "script.suspicious_api": [("Execution", "T1059", "Command and Scripting Interpreter")],
+    "script.encoded_command": [("Defense Evasion", "T1027.010", "Command Obfuscation")],
+    "script.obfuscated": [("Defense Evasion", "T1027", "Obfuscated Files or Information")],
+    # Mach-O
+    "macho.encrypted": [("Defense Evasion", "T1027.002", "Software Packing")],
+    "macho.rpath_set": [("Hijack Execution Flow", "T1574.004", "Dylib Hijacking")],
 }
 
 # Canonical tactic ordering for the matrix columns (kill-chain left-to-right).

@@ -220,6 +220,7 @@
     <div id="dynWrap"></div>
     <div id="androidWrap"></div>
     <div id="binWrap"></div>
+    <div id="docWrap"></div>
     <div id="iocWrap" style="margin-top:18px"></div>
     <div id="intelWrap"></div>
     <details style="margin-top:16px"><summary>Raw report JSON</summary><pre id="raw"></pre></details>
@@ -379,6 +380,42 @@ function verdictFor(score) {
 }
 const esc = s => String(s ?? "").replace(/[&<>]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;"}[c]));
 
+function pills(arr) { return (arr||[]).map(x=>`<span class="pill">${esc(x)}</span>`).join("") || '<span class="muted">none</span>'; }
+function docBlock(r) {
+  if (r.pdf) { const p=r.pdf;
+    return `<h2 style="margin-top:18px">PDF</h2><div class="kv">
+      <div>Version</div><div>${esc(p.version||"—")}</div>
+      <div>Objects / streams</div><div>${p.object_count} / ${p.stream_count}${p.is_encrypted?" · encrypted":""}</div>
+      <div>JavaScript</div><div>${p.has_javascript?`yes (x${p.js_count})`:"no"}</div>
+      <div>Auto actions</div><div>${[p.has_openaction&&"/OpenAction",p.has_additional_actions&&"/AA",p.has_launch&&"/Launch"].filter(Boolean).join(", ")||"none"}</div>
+      <div>Embedded / URI</div><div>${p.has_embedded_files?`${p.embedded_count} file(s)`:"no"} · ${p.has_uri?"URI":"no URI"}</div>
+    </div>`; }
+  if (r.office) { const o=r.office;
+    return `<h2 style="margin-top:18px">Office document</h2><div class="kv">
+      <div>Container / type</div><div>${esc(o.container)} · ${esc(o.doc_type||"—")}</div>
+      <div>Macros</div><div>${o.has_macros?`yes${o.vba_extracted?` (${o.macro_line_count} lines)`:""}`:"no"}</div>
+      <div>Auto-exec</div><div>${pills(o.auto_exec)}</div>
+      <div>Suspicious keywords</div><div>${pills(o.suspicious_keywords)}</div>
+      ${(o.external_targets||[]).length?`<div>Remote targets</div><div>${pills(o.external_targets)}</div>`:""}
+    </div>`; }
+  if (r.script) { const s=r.script;
+    return `<h2 style="margin-top:18px">Script</h2><div class="kv">
+      <div>Language</div><div>${esc(s.language)}</div>
+      <div>Size</div><div>${s.line_count} lines · ${s.char_count.toLocaleString()} chars</div>
+      <div>Obfuscation</div><div>${(s.obfuscation_score*100).toFixed(0)}% ${pills(s.obfuscation_indicators)}</div>
+      <div>Suspicious APIs</div><div>${pills(s.suspicious_apis)}</div>
+    </div>`; }
+  if (r.macho) { const m=r.macho;
+    return `<h2 style="margin-top:18px">Mach-O</h2><div class="kv">
+      <div>Arch</div><div>${(m.archs||[]).join(", ")||"—"}${m.is_fat?" (universal)":""}</div>
+      <div>Type</div><div>${esc(m.filetype||"—")}</div>
+      <div>Signed / encrypted</div><div>${m.is_signed} / ${m.is_encrypted}</div>
+      <div>Linked dylibs</div><div>${pills((m.linked_dylibs||[]).slice(0,10))}</div>
+      ${(m.rpaths||[]).length?`<div>@rpath</div><div>${pills(m.rpaths)}</div>`:""}
+    </div>`; }
+  return "";
+}
+
 function render(an, r) {
   currentAid = an.id;
   $("#aiWrap").innerHTML = "";
@@ -443,6 +480,9 @@ function render(an, r) {
       ${r.elf?`<div>Arch</div><div>${esc(r.elf.arch)}</div><div>Type</div><div>${esc(r.elf.elf_type)}</div><div>Stripped</div><div>${r.elf.is_stripped}</div>`:""}
       <div>Sections</div><div>${(bin.sections||[]).map(s=>esc(s.name)).join(", ")}</div>
     </div>` : "";
+
+  // PDF / Office / Script / Mach-O detail block
+  $("#docWrap").innerHTML = docBlock(r);
 
   // IOCs
   $("#iocWrap").innerHTML = r.iocs.length ? `

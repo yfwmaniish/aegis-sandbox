@@ -62,6 +62,16 @@ detonation, intelligence and reporting layers plug into it through clean interfa
   cert flag), native libs, DEX API scan. Heuristics: SMS/OTP capability, accessibility
   abuse, overlay+accessibility banker pattern, device admin, dynamic code loading
   (droppers), excessive permissions.
+- **Office maldocs (.doc/.xls/.docx/.xlsm):** OLE + OOXML macro detection (olevba when
+  installed, byte-scan fallback), auto-exec triggers (AutoOpen/Document_Open/…), shell/
+  download primitives, remote template injection, DDE. The #1 delivery vector.
+- **PDF:** structure + dangerous-feature scan (deobfuscating `#XX` names): `/JavaScript`,
+  `/OpenAction`, `/AA`, `/Launch`, `/EmbeddedFile`, `/RichMedia`, `/JBIG2Decode`, encryption.
+- **Scripts (JS/VBScript/PowerShell/batch/HTA/WSF):** language detection, obfuscation
+  scoring (base64/hex blobs, char-code assembly, encoded commands), suspicious APIs, and
+  the download-and-execute stager pattern.
+- **Mach-O (macOS, thin + universal):** architectures, file type, linked dylibs, @rpath,
+  code-signature and segment-encryption presence.
 
 Every finding is **evidence-first** — it separates *observed facts* from *inference*
 (TR-DET-02 / NFR-18) and carries severity + confidence.
