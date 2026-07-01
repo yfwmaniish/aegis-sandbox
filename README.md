@@ -1,39 +1,48 @@
 # Aegis Sandbox
 
-AI-assisted, multi-OS **malware static-analysis** platform — the first vertical of the
-Aegis Sandbox program (see the source requirements in
+AI-assisted, multi-OS **malware analysis** platform — static engine, **real isolated
+detonation** (Android + Linux), an LLM understanding layer, visualizations, threat-intel
+generation, a VirusTotal comparison, exportable reports and a corpus catch-rate
+scoreboard, behind a FastAPI control plane and a web console. Built to the Aegis Sandbox
+program spec (see
 [`../AI_Sandbox_Program_Document.md`](../AI_Sandbox_Program_Document.md),
 [`../PRD_AI_Sandboxing_Platform.md`](../PRD_AI_Sandboxing_Platform.md),
 [`../SRS_AI_Sandboxing_Platform.md`](../SRS_AI_Sandboxing_Platform.md),
 [`../TRD_AI_Sandboxing_Platform.md`](../TRD_AI_Sandboxing_Platform.md)).
 
-> ⚠️ **Authorized use only.** This platform is for defensive malware analysis and
-> detection engineering on samples you are authorized to handle. Samples are stored as
-> bytes in a quarantine object store and are **never executed** by this codebase — the
-> dynamic detonation zone is a separate, network-isolated component (not included here).
+> ⚠️ **Authorized use only.** For defensive malware analysis on samples you are
+> authorized to handle. Static analysis is **parse-only** — the sample is never executed.
+> Dynamic detonation runs the sample **only inside a disposable, network-isolated guest**
+> (Android emulator in airplane mode, or a Docker container with `--network none`), which
+> is verified offline before staging and torn down after — the host is never touched, and
+> live malware never runs on it. Live secrets/samples stay in git-ignored files.
 
 ---
 
-## What's built in this phase
+## What's built
 
-This phase delivers the **static analysis engine** running inside the **full control
-plane** prescribed by the TRD, with the dynamic detonation backend left as a clean
-plug-in interface (a real KVM/libvirt + Android-emulator backend implements it later).
+The static engine runs inside the **full control plane** prescribed by the TRD, and the
+detonation, intelligence and reporting layers plug into it through clean interfaces.
 
 | Area | Status | Where |
 |---|---|---|
-| Static engine (PE / ELF / APK) | ✅ deep | [`src/aegis/static/`](src/aegis/static/) |
+| Static engine (PE / ELF / APK / archive) | ✅ deep | [`src/aegis/static/`](src/aegis/static/) |
 | Common extractors (hash, entropy, strings, IOCs) | ✅ | [`src/aegis/static/common/`](src/aegis/static/common/) |
-| Versioned report schema | ✅ | [`src/aegis/static/models.py`](src/aegis/static/models.py) |
-| Analysis state machine + audit | ✅ | [`src/aegis/core/state.py`](src/aegis/core/state.py) |
-| Detonation orchestrator interface | ✅ contract | [`src/aegis/orchestrator/`](src/aegis/orchestrator/) |
-| Control plane (FastAPI, JWT, RBAC) | ✅ | [`src/aegis/api/`](src/aegis/api/) |
-| Celery + Redis task pipeline | ✅ | [`src/aegis/worker/`](src/aegis/worker/) |
-| Postgres schema + Alembic | ✅ | [`src/aegis/db/`](src/aegis/db/), [`migrations/`](migrations/) |
+| Versioned report schema + evidence-first findings | ✅ | [`src/aegis/static/models.py`](src/aegis/static/models.py) |
+| Analysis state machine + hash-chained audit | ✅ | [`src/aegis/core/state.py`](src/aegis/core/state.py) |
+| Control plane (FastAPI, JWT, RBAC) + web console | ✅ | [`src/aegis/api/`](src/aegis/api/) |
+| Celery + Redis pipeline (inline mode for local) | ✅ | [`src/aegis/worker/`](src/aegis/worker/) |
+| Postgres schema + Alembic / SQLite (local) | ✅ | [`src/aegis/db/`](src/aegis/db/), [`migrations/`](migrations/) |
 | Object storage (S3/MinIO + local) | ✅ | [`src/aegis/storage/`](src/aegis/storage/) |
-| Dynamic detonation (Android) | ✅ engine + Genymotion backend | [`dynamic/`](src/aegis/dynamic/), [`orchestrator/genymotion.py`](src/aegis/orchestrator/genymotion.py) |
-| Similarity / clustering / YARA-Sigma | 🚧 `501` stubs | intel phase |
-| LLM understanding (Claude) | 🚧 next | needs `ANTHROPIC_API_KEY` |
+| **Dynamic detonation — Android (AVD/Genymotion)** | ✅ real, isolated | [`dynamic/`](src/aegis/dynamic/), [`orchestrator/avd.py`](src/aegis/orchestrator/avd.py) |
+| **Dynamic detonation — Linux/ELF (Docker + strace)** | ✅ real, isolated | [`orchestrator/docker_linux.py`](src/aegis/orchestrator/docker_linux.py) |
+| **Dynamic detonation — Windows/PE** | ✅ honest scaffold (needs a VM) | [`orchestrator/windows.py`](src/aegis/orchestrator/windows.py) |
+| **LLM understanding (Claude)** | ✅ | [`src/aegis/ai/`](src/aegis/ai/) · `ANTHROPIC_API_KEY` |
+| **Visualizations (radar / heatmap / ATT&CK / graph)** | ✅ deterministic | [`src/aegis/insights/`](src/aegis/insights/) |
+| **Threat intel — similarity + YARA/Sigma** | ✅ | [`src/aegis/intel/`](src/aegis/intel/) |
+| **VirusTotal comparison (hash-only)** | ✅ | [`src/aegis/intel/virustotal.py`](src/aegis/intel/virustotal.py) · `VIRUSTOTAL_API_KEY` |
+| **Self-contained HTML/PDF report** | ✅ | [`src/aegis/report/`](src/aegis/report/) |
+| **Corpus catch-rate scoreboard** | ✅ | [`src/aegis/corpus/`](src/aegis/corpus/) |
 
 ### What the static engine extracts
 
@@ -70,6 +79,22 @@ pip install -e ".[api,worker,dev]"                    # add "static" on Linux fo
 pytest -q                                             # run the test suite
 ```
 
+### Web console — one command
+
+```bash
+python serve.py            # -> http://127.0.0.1:8000/ui/
+```
+
+`serve.py` sets dev-friendly defaults (SQLite, local object store, inline analysis — no
+Postgres/Redis/MinIO needed). The console: sign in (first account becomes admin), upload
+a sample, pick **Static only** or **Dynamic (detonate)**, and get the verdict, findings,
+IOCs, the **Visual analysis** panels, **Threat intelligence** (similar samples + YARA/Sigma),
+and buttons for **✨ Explain with AI**, **⬇ Export report**, and **🔍 Compare with
+VirusTotal**. The **📊 Corpus** button shows the catch-rate scoreboard across all samples.
+
+Optional keys go in a git-ignored `.env` (never committed): `ANTHROPIC_API_KEY` (AI
+narrative), `VIRUSTOTAL_API_KEY` (VT comparison — only the SHA-256 is ever sent).
+
 ### Run the API locally (SQLite + filesystem storage + inline tasks)
 
 ```bash
@@ -99,11 +124,14 @@ AID=$(curl -s localhost:8000/v1/analyses -H "authorization: Bearer $TOKEN" \
 curl -s localhost:8000/v1/analyses/$AID/report -H "authorization: Bearer $TOKEN"
 ```
 
-### Analyze a file straight from the CLI
+### CLI
 
 ```bash
 python -m aegis.cli analyze /path/to/sample.exe          # pretty summary
 python -m aegis.cli analyze /path/to/app.apk --json      # full JSON report
+python -m aegis.cli scan   /path/to/folder               # batch catch-rate scoreboard
+python -m aegis.cli scan   /path/to/folder --virustotal  # + "caught by Aegis, missed by VT"
+python -m aegis.cli doctor                               # detonation toolchain preflight
 ```
 
 ---
@@ -151,16 +179,52 @@ export AVD_NAME=aegis-avd
 export FRIDA_SERVER_PATH=/path/to/frida-server-<ver>-android-x86_64
 ```
 
-### Real detonation — `genymotion` backend (alternative)
+### Real detonation — `docker` backend (Linux / ELF)
 
-Same flow via `gmtool` + `adb` + Frida; note `gmtool` may require a **paid** Genymotion
-license. Install Genymotion Desktop, create a device named `aegis-android` (or set
-`GENYMOTION_DEVICE`), then `SANDBOX_BACKEND=genymotion`. Isolation here must be done at the
-hypervisor (host-only network) since Genymotion's adb shares the guest network.
+Detonates an ELF inside a **locked-down disposable container** and records real syscall
+behaviour with `strace`: `--network none` (no egress — the isolation invariant),
+read-only rootfs, tmpfs scratch, all caps dropped except the one `strace` needs
+(`SYS_PTRACE`), `no-new-privileges`, and pid/memory/CPU caps plus a wall-clock timeout.
+`execve`/`connect`/file-write/spawn syscalls normalize into the same event stream and
+feed the same detectors. One-time image build needs internet; detonations are offline.
 
-In all cases, analyses created with profile `standard`/`hardened` on an APK detonate;
-runtime findings merge into the same `/findings` + risk score, and the full event stream
-is at `GET /v1/analyses/{id}/dynamic`.
+```bash
+# start Docker Desktop / Engine (Linux containers), then:
+export SANDBOX_BACKEND=docker      # first run builds aegis-linux-sandbox:latest (~1 min)
+# submit an ELF with profile "standard"
+```
+
+### Real detonation — `genymotion` (APK) / `windows` (PE)
+
+`genymotion`: same Android flow via `gmtool` + `adb` + Frida (`gmtool` may need a **paid**
+license). `windows`: integrates an external, isolated Windows guest + in-guest agent
+(`WINDOWS_VM_NAME` + `WINDOWS_AGENT_URL`) and **refuses to run** when unconfigured rather
+than emitting fabricated telemetry.
+
+Routing is by file type: **APK → `avd`/`genymotion`, ELF → `docker`, PE → `windows`**.
+Analyses with profile `standard`/`hardened` detonate; runtime findings merge into the same
+`/findings` + risk score, and the full event stream is at `GET /v1/analyses/{id}/dynamic`.
+
+## Understanding, visualizations & intel
+
+Every completed analysis can be enriched — all deterministic and offline **except** the
+two that call out (clearly gated on their own API keys):
+
+- **Visual analysis** ([`insights/`](src/aegis/insights/)) — a capability radar, an
+  Android permission heatmap, a **MITRE ATT&CK** matrix (indicator → technique), and a
+  behaviour/network graph, derived from the static (+ dynamic) report. No key required.
+- **Threat intel** ([`intel/`](src/aegis/intel/)) — **similarity** ranking against the
+  corpus (shared indicators/endpoints, package/imphash, TLSH), and generated **YARA +
+  Sigma** rules tagged with the mapped ATT&CK techniques.
+- **VirusTotal comparison** — hash-only lookup that puts VT's multi-engine verdict next
+  to Aegis's, with an explicit **detection-gap** flag for "Aegis caught it, VT missed it."
+- **AI narrative** ([`ai/`](src/aegis/ai/)) — a Claude-written summary, behaviour
+  workflow, ATT&CK mapping and defensive actions (human-review-required).
+- **Report export** ([`report/`](src/aegis/report/)) — a single self-contained HTML file
+  (inline SVG, no JS) bundling all of the above; open it and Print → Save as PDF.
+- **Corpus scoreboard** ([`corpus/`](src/aegis/corpus/)) — batch metrics across all
+  samples: flagged-vs-clean catch rate, risk distribution, top capabilities, and the
+  count Aegis flagged that VirusTotal did not.
 
 ## Full stack (Docker Compose)
 
@@ -192,9 +256,16 @@ implements [`SandboxOrchestrator`](src/aegis/orchestrator/base.py) separately.
 | `GET`  | `/v1/analyses/{id}/findings` | paginated, severity filter |
 | `GET`  | `/v1/analyses/{id}/iocs` | paginated, type filter |
 | `GET`  | `/v1/analyses/{id}/report` | full versioned static report |
+| `GET`  | `/v1/analyses/{id}/dynamic` | detonation event stream + behaviour roll-ups |
 | `GET`  | `/v1/analyses/{id}/timeline` | hash-chained audit / state transitions |
-| `GET`  | `/v1/analyses/{id}/similar` | `501` (intel phase) |
-| `GET`  | `/v1/analyses/{id}/rules` | `501` (intel phase) |
+| `GET`  | `/v1/analyses/{id}/visualizations` | radar / heatmap / ATT&CK / graph (deterministic) |
+| `GET`  | `/v1/analyses/{id}/similar` | sample similarity ranking |
+| `GET`  | `/v1/analyses/{id}/rules` | generated YARA + Sigma |
+| `GET`  | `/v1/analyses/{id}/virustotal` | VT-vs-Aegis comparison (hash-only) |
+| `GET`  | `/v1/analyses/{id}/report.html` | self-contained HTML/PDF report |
+| `POST` | `/v1/analyses/{id}/understanding` | generate Claude narrative (`GET` to fetch) |
+| `GET`  | `/v1/corpus/scoreboard` | catch-rate scoreboard across all samples |
+| `GET`  | `/ui/` | web console |
 
 ---
 
@@ -216,7 +287,7 @@ implements [`SandboxOrchestrator`](src/aegis/orchestrator/base.py) separately.
             │ + hash / entropy / strings / IOC / rules  │
             └──────────────────────────────────────────┘
 
-   (future)  Orchestrator interface ─▶ Detonation zone: KVM VMs / Android emulators
+   detonate  Orchestrator ─▶ isolated guest: Android emulator (airplane) / Docker (--network none)
 ```
 
 Analysis lifecycle (SRS §7): `created → queued → [provisioning → running →
@@ -240,14 +311,21 @@ alembic upgrade head                        # apply
 
 ```
 src/aegis/
-  static/        # the static analysis engine (PE/ELF/APK + common extractors)
+  static/        # the static analysis engine (PE/ELF/APK/archive + common extractors)
+  dynamic/       # canonical event schema, normalizers (frida/logcat/strace), detectors
+  orchestrator/  # detonation backends: avd, docker_linux, genymotion, windows, fake + router
+  ai/            # Claude understanding layer (graceful no-key fallback)
+  insights/      # deterministic visualizations (radar/heatmap/ATT&CK/graph)
+  intel/         # similarity, YARA/Sigma generation, VirusTotal comparison
+  report/        # self-contained HTML/PDF report builder
+  corpus/        # batch scan + catch-rate scoreboard
   core/          # config, enums, state machine
-  orchestrator/  # detonation interface + environment router (no hypervisor binding)
   db/            # SQLAlchemy models, persistence helpers, audit chaining
   storage/       # object store abstraction (S3/MinIO + local)
-  api/           # FastAPI app, auth, routers, schemas
-  worker/        # Celery app + the static pipeline
+  api/           # FastAPI app, auth, routers, schemas, web console (static/)
+  worker/        # Celery app + the static/dynamic pipeline
+serve.py         # one-command local launcher for the web console
 migrations/      # Alembic
-tests/           # hermetic tests with synthetic PE/ELF/APK fixtures
+tests/           # hermetic tests (111) with synthetic PE/ELF/APK fixtures
 ```
 ```

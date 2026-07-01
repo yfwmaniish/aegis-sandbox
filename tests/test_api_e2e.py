@@ -116,9 +116,30 @@ def test_full_flow_pe(client, minimal_pe):
     r = client.get(f"/v1/analyses/{aid}/iocs", headers=headers)
     assert r.status_code == 200
 
-    # Phase-deferred endpoints advertise 501.
-    assert client.get(f"/v1/analyses/{aid}/similar", headers=headers).status_code == 501
-    assert client.get(f"/v1/analyses/{aid}/rules", headers=headers).status_code == 501
+    # Threat-intel endpoints: similarity (empty corpus) + generated rules.
+    rs = client.get(f"/v1/analyses/{aid}/similar", headers=headers)
+    assert rs.status_code == 200
+    assert rs.json()["count"] == 0  # only this sample in the corpus
+
+    rr = client.get(f"/v1/analyses/{aid}/rules", headers=headers)
+    assert rr.status_code == 200
+    rules = rr.json()
+    assert rules["yara"]["text"].startswith("rule ")
+    assert "detection:" in rules["sigma"]["yaml"]
+
+    # Self-contained HTML report.
+    rh = client.get(f"/v1/analyses/{aid}/report.html", headers=headers)
+    assert rh.status_code == 200
+    assert rh.headers["content-type"].startswith("text/html")
+    assert rh.text.startswith("<!doctype html>")
+    assert "Analysis Report" in rh.text and "MITRE ATT&CK" in rh.text
+
+    # Corpus scoreboard aggregates the completed analysis.
+    cs = client.get("/v1/corpus/scoreboard", headers=headers)
+    assert cs.status_code == 200
+    board = cs.json()
+    assert board["total"] >= 1
+    assert board["flagged"] + board["clean"] == board["total"]
 
 
 def test_rbac_register_after_bootstrap(client):

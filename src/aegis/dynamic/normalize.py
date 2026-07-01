@@ -151,3 +151,103 @@ def parse_dumpsys_permissions(text: str) -> tuple[list[str], list[str]]:
         if g:
             granted.append(g.group(1))
     return sorted(set(requested)), sorted(set(granted))
+
+
+# ── strace (Linux/ELF detonation) ────────────────────────────────────────────
+# Emitted with `strace -f -ttt` (epoch timestamps, per-pid). One line per syscall:
+#   [pid  1234] 1712345678.123456 openat(AT_FDCWD, "/tmp/x", O_WRONLY|O_CREAT, 0644) = 4
+#   1234 1712345678.200 connect(3, {sa_family=AF_INET, sin_port=htons(443), sin_addr=inet_addr("1.2.3.4")}, 16) = -1 EINPROGRESS
+_STRACE_RE = re.compile(
+    r"^(?:\[pid\s+(?P<p1>\d+)\]\s+|(?P<p2>\d+)\s+)?"
+    r"(?P<ts>\d+\.\d+)\s+"
+    r"(?P<call>\w+)\((?P<args>.*)\)\s+=\s+(?P<ret>-?\d+|0x[0-9a-fA-F]+|\?)"
+)
+_STR_INET = re.compile(r'inet_addr\("([^"]+)"\)')
+_STR_INET6 = re.compile(r'inet_pton\(AF_INET6,\s*"([^"]+)"')
+_STR_PORT = re.compile(r"(?:sin6?_port=)?htons\((\d+)\)")
+_STR_QUOTED = re.compile(r'"((?:[^"\\]|\\.)*)"')
+_STR_WRITE_FLAGS = ("O_WRONLY", "O_RDWR", "O_CREAT", "O_APPEND", "O_TRUNC")
+
+
+def _strace_ts(epoch: str) -> datetime:
+    try:
+        return datetime.fromtimestamp(float(epoch), tz=UTC)
+    except (TypeError, ValueError, OSError):
+        return datetime.now(tz=UTC)
+
+
+def parse_strace(text: str, raw_ref: str = "opaque://strace") -> list[NormalizedEvent]:
+    """Parse ``strace -f -ttt`` output into normalized events (process/file/network).
+
+    Focuses on the behaviour-revealing syscalls: execve (command execution), connect
+    (network egress), file writes/renames/unlinks/chmod (drops), and clone/fork
+    (process spawn). Failed reads and local (AF_UNIX/netlink) sockets are dropped."""
+    events: list[NormalizedEvent] = []
+    for raw in text.splitlines():
+        line = raw.strip()
+        if not line or "<unfinished" in line or "resumed>" in line or line.startswith(("+++", "---")):
+            continue
+        m = _STRACE_RE.match(line)
+        if not m:
+            continue
+        pid = int(m["p1"] or m["p2"]) if (m["p1"] or m["p2"]) else None
+        call, args, ret = m["call"], m["args"], m["ret"]
+        ts = _strace_ts(m["ts"])
+        ev = _strace_event(call, args, ret, pid, ts, raw_ref)
+        if ev is not None:
+            events.append(ev)
+    return events
+
+
+def _strace_event(call, args, ret, pid, ts, raw_ref) -> NormalizedEvent | None:
+    def mk(category, action, obj_type, value, detail=None):
+        return NormalizedEvent(
+            timestamp=ts, platform="linux", category=category, action=action,
+            subject=EventSubject(pid=pid), object=EventObject(type=obj_type, value=value),
+            raw_ref=raw_ref, collector="strace", collector_version=_COLLECTOR_VERSION,
+            detail=detail or {},
+        )
+
+    if call in ("execve", "execveat"):
+        q = _STR_QUOTED.findall(args)
+        if not q:
+            return None
+        path = q[0]
+        argv = " ".join(a for a in q[1:6])
+        return mk(EventCategory.EXEC, "execve", "command", (path + (" " + argv if argv else "")).strip()[:300])
+
+    if call in ("connect", "sendto", "sendmsg"):
+        ip = None
+        mi = _STR_INET.search(args) or _STR_INET6.search(args)
+        if mi:
+            ip = mi.group(1)
+        if not ip or ip in ("0.0.0.0", "127.0.0.1", "::1"):
+            return None  # unresolved / loopback / AF_UNIX → not egress
+        mp = _STR_PORT.search(args)
+        detail = {"port": int(mp.group(1))} if mp else {}
+        return mk(EventCategory.NETWORK, call, "ip", ip, detail)
+
+    if call in ("open", "openat"):
+        if not any(f in args for f in _STR_WRITE_FLAGS):
+            return None  # read-only opens are noise
+        try:
+            if int(ret) < 0:
+                return None
+        except ValueError:
+            pass
+        q = _STR_QUOTED.findall(args)
+        path = q[-1] if call == "openat" and len(q) > 1 else (q[0] if q else None)
+        return mk(EventCategory.FILE, "open_write", "file", path) if path else None
+
+    if call in ("rename", "renameat", "renameat2"):
+        q = _STR_QUOTED.findall(args)
+        return mk(EventCategory.FILE, "rename", "file", q[-1]) if q else None
+    if call in ("unlink", "unlinkat"):
+        q = _STR_QUOTED.findall(args)
+        return mk(EventCategory.FILE, "delete", "file", q[-1]) if q else None
+    if call in ("chmod", "fchmodat"):
+        q = _STR_QUOTED.findall(args)
+        return mk(EventCategory.FILE, "chmod", "file", q[-1]) if q else None
+    if call in ("clone", "clone3", "fork", "vfork"):
+        return mk(EventCategory.PROCESS, "spawn", "process", ret)
+    return None

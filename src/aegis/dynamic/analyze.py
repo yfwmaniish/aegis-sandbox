@@ -15,6 +15,7 @@ from aegis.dynamic.normalize import (
     parse_dumpsys_permissions,
     parse_frida_events,
     parse_logcat,
+    parse_strace,
 )
 
 # A modest cap on how many full events to embed in the report (the complete stream is
@@ -30,6 +31,7 @@ def build_report(
     frida_jsonl: str = "",
     logcat: str = "",
     dumpsys: str = "",
+    strace: str = "",
     started_at: datetime | None = None,
     ended_at: datetime | None = None,
     exit_reason: str = "finished",
@@ -41,7 +43,8 @@ def build_report(
     errors = dict(collector_errors or {})
 
     for name, fn in (("frida", lambda: parse_frida_events(frida_jsonl)),
-                     ("logcat", lambda: parse_logcat(logcat))):
+                     ("logcat", lambda: parse_logcat(logcat)),
+                     ("strace", lambda: parse_strace(strace))):
         try:
             events.extend(fn())
         except Exception as exc:  # noqa: BLE001 - one collector failing must not abort

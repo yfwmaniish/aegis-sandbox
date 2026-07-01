@@ -5,10 +5,12 @@ from __future__ import annotations
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi.responses import HTMLResponse
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from aegis.api.deps import get_current_user, get_db
+from aegis.core.enums import AnalysisProfile, AnalysisState
 from aegis.api.schemas import (
     AnalysisCreate,
     AnalysisOut,
@@ -62,8 +64,11 @@ def create_analysis(
     db.commit()
     db.refresh(analysis)
 
-    # Inline mode runs synchronously here; dispatch mode hands off to Celery.
-    enqueue_static_analysis(str(analysis.id))
+    # Detonation profiles can take minutes; in inline mode run them in a background
+    # thread so the request returns immediately and the client polls the state.
+    # Static-only stays synchronous (fast, and keeps the create->completed contract).
+    detonates = payload.profile != AnalysisProfile.STATIC_ONLY
+    enqueue_static_analysis(str(analysis.id), allow_background=detonates)
 
     db.refresh(analysis)
     return analysis
@@ -165,6 +170,92 @@ def get_dynamic_report(
     return row.report
 
 
+@router.get("/{analysis_id}/visualizations")
+def get_visualizations(
+    analysis_id: uuid.UUID,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Deterministic visualization bundle (capability radar, permission heatmap,
+    MITRE ATT&CK matrix, behaviour graph) derived from the stored reports. Computed on
+    the fly — no LLM/API key needed. 409 until the static report exists."""
+    _get_analysis_or_404(db, analysis_id)
+    static_row = db.execute(
+        select(StaticReportRow).where(StaticReportRow.analysis_id == analysis_id)
+    ).scalar_one_or_none()
+    if static_row is None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="report not available yet (analysis not completed)",
+        )
+    dyn_row = db.execute(
+        select(DynamicReportRow).where(DynamicReportRow.analysis_id == analysis_id)
+    ).scalar_one_or_none()
+
+    from aegis.insights import build_visualizations
+
+    viz = build_visualizations(static_row.report, dyn_row.report if dyn_row else None)
+    return viz.model_dump(mode="json")
+
+
+@router.get("/{analysis_id}/report.html", response_class=HTMLResponse)
+def export_report_html(
+    analysis_id: uuid.UUID,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Render a self-contained HTML analyst report (print-to-PDF friendly) bundling the
+    verdict, findings, IOCs, visualizations, dynamic run, AI narrative, generated rules
+    and similar samples. 409 until the static report exists."""
+    analysis = _get_analysis_or_404(db, analysis_id)
+    static_row = db.execute(
+        select(StaticReportRow).where(StaticReportRow.analysis_id == analysis_id)
+    ).scalar_one_or_none()
+    if static_row is None:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT,
+                            detail="report not available yet (analysis not completed)")
+    dyn_row = db.execute(
+        select(DynamicReportRow).where(DynamicReportRow.analysis_id == analysis_id)
+    ).scalar_one_or_none()
+    ai_row = db.execute(
+        select(AIUnderstandingRow).where(AIUnderstandingRow.analysis_id == analysis_id)
+    ).scalar_one_or_none()
+
+    from aegis.insights import build_visualizations
+    from aegis.intel import CorpusItem, find_similar, generate_rules
+    from aegis.report import build_report_html
+
+    dynamic = dyn_row.report if dyn_row else None
+    viz = build_visualizations(static_row.report, dynamic)
+    rules = generate_rules(static_row.report, sha256=analysis.sample.sha256,
+                           risk=analysis.risk_score)
+
+    rows = db.execute(
+        select(StaticReportRow, Analysis, Sample)
+        .join(Analysis, Analysis.id == StaticReportRow.analysis_id)
+        .join(Sample, Sample.id == Analysis.sample_id)
+        .where(Analysis.state == AnalysisState.COMPLETED.value)
+        .order_by(StaticReportRow.created_at.desc())
+        .limit(500)
+    ).all()
+    corpus = [
+        CorpusItem(analysis_id=str(a.id), sha256=s.sha256, filename=s.original_filename,
+                   file_type=s.file_type, risk_score=a.risk_score, report=sr.report)
+        for sr, a, s in rows if a.id != analysis_id
+    ]
+    similar = find_similar(static_row.report, corpus,
+                           target_sha256=analysis.sample.sha256)
+
+    doc = build_report_html(
+        static=static_row.report, viz=viz, dynamic=dynamic,
+        understanding=ai_row.understanding if ai_row else None,
+        rules=rules, similar=similar, sha256=analysis.sample.sha256,
+        filename=analysis.sample.original_filename, risk=analysis.risk_score,
+        target_os=analysis.target_os,
+    )
+    return HTMLResponse(content=doc)
+
+
 @router.post("/{analysis_id}/understanding", status_code=status.HTTP_201_CREATED)
 def generate_understanding(
     analysis_id: uuid.UUID,
@@ -264,19 +355,87 @@ def get_timeline(
     )
 
 
-@router.get("/{analysis_id}/similar", status_code=status.HTTP_501_NOT_IMPLEMENTED)
-def get_similar(analysis_id: uuid.UUID, user: User = Depends(get_current_user)):
-    """Similarity search (FR-11) — implemented in the intel phase (embeddings/Qdrant)."""
-    raise HTTPException(
-        status_code=status.HTTP_501_NOT_IMPLEMENTED,
-        detail="similarity search not implemented in the static-analysis phase",
-    )
+@router.get("/{analysis_id}/similar")
+def get_similar(
+    analysis_id: uuid.UUID,
+    limit: int = Query(10, ge=1, le=50),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Rank the corpus for samples similar to this one (FR-11): shared behaviour
+    indicators, network endpoints, package/imphash and TLSH distance. 409 until the
+    static report exists."""
+    analysis = _get_analysis_or_404(db, analysis_id)
+    target_static = db.execute(
+        select(StaticReportRow).where(StaticReportRow.analysis_id == analysis_id)
+    ).scalar_one_or_none()
+    if target_static is None:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT,
+                            detail="report not available yet (analysis not completed)")
+    target_sha = analysis.sample.sha256
+
+    from aegis.intel import CorpusItem, find_similar
+
+    rows = db.execute(
+        select(StaticReportRow, Analysis, Sample)
+        .join(Analysis, Analysis.id == StaticReportRow.analysis_id)
+        .join(Sample, Sample.id == Analysis.sample_id)
+        .where(Analysis.state == AnalysisState.COMPLETED.value)
+        .order_by(StaticReportRow.created_at.desc())
+        .limit(500)
+    ).all()
+    corpus = [
+        CorpusItem(analysis_id=str(a.id), sha256=s.sha256, filename=s.original_filename,
+                   file_type=s.file_type, risk_score=a.risk_score, report=sr.report)
+        for sr, a, s in rows if a.id != analysis_id
+    ]
+    result = find_similar(target_static.report, corpus, target_sha256=target_sha, limit=limit)
+    return result.model_dump(mode="json")
 
 
-@router.get("/{analysis_id}/rules", status_code=status.HTTP_501_NOT_IMPLEMENTED)
-def get_rules(analysis_id: uuid.UUID, user: User = Depends(get_current_user)):
-    """YARA/Sigma rule suggestions (FR-12) — implemented in the intel phase."""
-    raise HTTPException(
-        status_code=status.HTTP_501_NOT_IMPLEMENTED,
-        detail="rule suggestion not implemented in the static-analysis phase",
-    )
+@router.get("/{analysis_id}/rules")
+def get_rules(
+    analysis_id: uuid.UUID,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Generate portable YARA + Sigma detection rules from this analysis (FR-12).
+    Deterministic; no LLM. 409 until the static report exists."""
+    analysis = _get_analysis_or_404(db, analysis_id)
+    static_row = db.execute(
+        select(StaticReportRow).where(StaticReportRow.analysis_id == analysis_id)
+    ).scalar_one_or_none()
+    if static_row is None:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT,
+                            detail="report not available yet (analysis not completed)")
+
+    from aegis.intel import generate_rules
+
+    bundle = generate_rules(static_row.report, sha256=analysis.sample.sha256,
+                            risk=analysis.risk_score)
+    return bundle.model_dump(mode="json")
+
+
+@router.get("/{analysis_id}/virustotal")
+def get_virustotal(
+    analysis_id: uuid.UUID,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Look the sample up on VirusTotal by SHA-256 (the file is never uploaded) and
+    compare VT's multi-engine verdict with Aegis's. Requires VIRUSTOTAL_API_KEY; returns
+    an 'unavailable' result (not an error) when unset so the UI can prompt for a key."""
+    analysis = _get_analysis_or_404(db, analysis_id)
+    from aegis.core.config import get_settings
+    from aegis.intel.virustotal import build_comparison, lookup_virustotal
+
+    settings = get_settings()
+    n_ind = db.execute(
+        select(func.count()).select_from(
+            select(Finding).where(Finding.analysis_id == analysis_id).subquery()
+        )
+    ).scalar_one()
+    vt = lookup_virustotal(analysis.sample.sha256, settings.virustotal_api_key)
+    comparison = build_comparison(analysis.sample.sha256, vt,
+                                  risk=analysis.risk_score, indicator_count=n_ind)
+    return comparison.model_dump(mode="json")

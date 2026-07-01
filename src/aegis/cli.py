@@ -69,21 +69,33 @@ def _print_apk(a) -> None:
 def _doctor() -> int:
     """Report dynamic-analysis toolchain readiness for each backend."""
     from aegis.orchestrator.avd import AvdOrchestrator
+    from aegis.orchestrator.docker_linux import DockerLinuxOrchestrator
     from aegis.orchestrator.genymotion import GenymotionOrchestrator
+    from aegis.orchestrator.windows import WindowsOrchestrator
 
     print("Aegis dynamic-analysis preflight")
     print("=" * 44)
 
-    print("\n[avd] Android Emulator - free, no license (recommended)")
+    print("\n[avd] Android Emulator (APK) - free, no license (recommended)")
     avd = AvdOrchestrator.preflight()
     for tool, ok in avd.items():
         print(f"  [{'OK ' if ok else 'MISSING'}] {tool}")
     avd_ready = avd.get("emulator") and avd.get("adb")
 
+    print("\n[docker] Linux ELF detonation - isolated container + strace")
+    dk = DockerLinuxOrchestrator.preflight()
+    for tool, ok in dk.items():
+        print(f"  [{'OK ' if ok else 'MISSING'}] {tool}")
+
     print("\n[genymotion] Genymotion Desktop (gmtool may need a paid license)")
     gm = GenymotionOrchestrator.preflight()
     for tool, ok in gm.items():
         print(f"  [{'OK ' if ok else 'MISSING'}] {tool}")
+
+    print("\n[windows] PE detonation - requires a configured Windows guest+agent")
+    win = WindowsOrchestrator.preflight()
+    for tool, ok in win.items():
+        print(f"  [{'OK ' if ok else 'not set'}] {tool}")
 
     print()
     if avd_ready:
@@ -99,6 +111,53 @@ def _doctor() -> int:
     return 0
 
 
+def _scan(folder: str, *, recursive: bool, as_json: bool, virustotal: bool) -> int:
+    """Batch-scan a folder and print a catch-rate scoreboard."""
+    import json
+    import os
+    from pathlib import Path
+
+    from aegis.corpus import build_scoreboard, scan_folder
+
+    root = Path(folder)
+    if not root.is_dir():
+        print(f"error: not a directory: {folder}", file=sys.stderr)
+        return 2
+    vt_key = os.environ.get("VIRUSTOTAL_API_KEY") if virustotal else None
+    if virustotal and not vt_key:
+        print("note: --virustotal set but VIRUSTOTAL_API_KEY is unset; skipping VT.", file=sys.stderr)
+    rows = scan_folder(root, recursive=recursive, vt_api_key=vt_key)
+    board = build_scoreboard(rows)
+
+    if as_json:
+        print(board.model_dump_json(indent=2))
+        return 0
+
+    print(f"\nAegis corpus scoreboard  -  {board.total} sample(s) scanned")
+    print("=" * 60)
+    for r in sorted(board.rows, key=lambda x: x.risk_score, reverse=True):
+        vt = ""
+        if r.vt_missed:
+            vt = "  [VT-MISSED]"
+        elif r.vt_found:
+            vt = f"  VT {r.vt_malicious} flagged"
+        print(f"  {r.verdict:8} {r.risk_score:5.1f}  {r.file_type:5}  {r.filename}{vt}")
+    errs = [r for r in rows if r.error]
+    for r in errs:
+        print(f"  ERROR           {r.filename}: {r.error}")
+    print("-" * 60)
+    print(f"  flagged: {board.flagged}/{board.total} ({board.flagged_pct}%)   "
+          f"clean: {board.clean}")
+    print("  verdicts : " + ", ".join(f"{c.label} {c.count}" for c in board.verdict_counts))
+    print("  types    : " + ", ".join(f"{c.label} {c.count}" for c in board.file_type_counts))
+    print("  risk     : " + ", ".join(f"{b.label.split(' ')[0]} {b.count}" for b in board.risk_histogram))
+    if board.top_capabilities:
+        print("  top caps : " + ", ".join(f"{c.label}({c.count})" for c in board.top_capabilities[:6]))
+    if board.vt_checked:
+        print(f"  VT       : {board.vt_missed_count}/{board.vt_checked} caught by Aegis but MISSED by VirusTotal")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="aegis", description="Aegis static analysis engine")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -108,12 +167,23 @@ def main(argv: list[str] | None = None) -> int:
     a.add_argument("--json", action="store_true", help="emit the full JSON report")
     a.add_argument("--min-len", type=int, default=5, help="minimum string length")
 
+    sc = sub.add_parser("scan", help="batch-scan a folder and print a catch-rate scoreboard")
+    sc.add_argument("folder", help="directory of samples to scan (parse-only, never executed)")
+    sc.add_argument("--recursive", action="store_true", help="recurse into subdirectories")
+    sc.add_argument("--json", action="store_true", help="emit the scoreboard as JSON")
+    sc.add_argument("--virustotal", action="store_true",
+                    help="cross-reference each sample against VirusTotal (needs VIRUSTOTAL_API_KEY)")
+
     sub.add_parser("doctor", help="check the dynamic-analysis toolchain (Genymotion/adb/frida)")
 
     args = parser.parse_args(argv)
 
     if args.command == "doctor":
         return _doctor()
+
+    if args.command == "scan":
+        return _scan(args.folder, recursive=args.recursive, as_json=args.json,
+                     virustotal=args.virustotal)
 
     if args.command == "analyze":
         try:

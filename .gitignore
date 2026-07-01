@@ -24,6 +24,9 @@ htmlcov/
 /samples/
 "Tesk APK/"
 *.db
+*.db-journal
+*.db-wal
+*.db-shm
 *.sqlite
 *.sqlite3
 /tools/frida-server

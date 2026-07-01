@@ -26,9 +26,13 @@ class Base(DeclarativeBase):
 def get_engine(url: str | None = None) -> Engine:
     settings = get_settings()
     db_url = url or settings.sqlalchemy_url
-    connect_args = {}
+    connect_args: dict[str, object] = {}
     if db_url.startswith("sqlite"):
+        # Allow use across threads (the inline pipeline runs detonations in a daemon
+        # thread) and wait on locks instead of erroring when the worker thread writes
+        # state transitions while a request polls the same DB.
         connect_args["check_same_thread"] = False
+        connect_args["timeout"] = 30.0
     return create_engine(db_url, pool_pre_ping=True, future=True, connect_args=connect_args)
 
 

@@ -121,8 +121,11 @@ def _detonate(settings, store, session, analysis, static_report, profile, move) 
     backend_cls = _load_backend(settings.sandbox_backend)
     orch = backend_cls(settings, store)
     target_os = route_environment(static_report.file_type)
+    # Empty image -> each backend uses its own configured device
+    # (AvdOrchestrator.avd_name / GenymotionOrchestrator.device_name). Hardcoding the
+    # Genymotion device name here made the AVD backend try to boot a non-existent AVD.
     spec = EnvironmentSpec(
-        target_os=target_os, profile=profile, image=settings.genymotion_device,
+        target_os=target_os, profile=profile, image="",
         labels={"network_policy": settings.dynamic_network_policy},
     )
 
@@ -151,6 +154,7 @@ def _detonate(settings, store, session, analysis, static_report, profile, move) 
                 image=settings.genymotion_device, network_policy=settings.dynamic_network_policy,
             ),
             frida_jsonl=raw["frida"], logcat=raw["logcat"], dumpsys=raw["dumpsys"],
+            strace=raw["strace"],
             exit_reason=det.exit_reason, raw_refs=coll.raw_refs,
         )
         return persist_dynamic_report(session, analysis, dyn_report)
@@ -159,12 +163,21 @@ def _detonate(settings, store, session, analysis, static_report, profile, move) 
         record_transition_audit(session, analysis, roll)
 
 
+# Which file types each backend can actually detonate.
+_BACKEND_TYPES: dict[str, set[FileType]] = {
+    "avd": {FileType.APK},
+    "genymotion": {FileType.APK},
+    "fake": {FileType.APK},
+    "docker": {FileType.ELF},
+    "windows": {FileType.PE},
+}
+
+
 def _should_detonate(settings, profile: AnalysisProfile, file_type: FileType) -> bool:
-    return (
-        profile != AnalysisProfile.STATIC_ONLY
-        and bool(settings.sandbox_backend)
-        and file_type == FileType.APK  # only APKs are directly installable for now
-    )
+    backend = settings.sandbox_backend
+    if profile == AnalysisProfile.STATIC_ONLY or not backend:
+        return False
+    return file_type in _BACKEND_TYPES.get(backend, {FileType.APK})
 
 
 def _load_backend(name: str):
@@ -174,6 +187,10 @@ def _load_backend(name: str):
         import aegis.orchestrator.genymotion  # noqa: F401
     elif name == "avd":
         import aegis.orchestrator.avd  # noqa: F401
+    elif name == "docker":
+        import aegis.orchestrator.docker_linux  # noqa: F401
+    elif name == "windows":
+        import aegis.orchestrator.windows  # noqa: F401
     return get_backend(name)
 
 
@@ -185,7 +202,7 @@ def sample_ref(analysis, store, settings) -> str:
 
 
 def _load_raw(store, refs: list[str]) -> dict[str, str]:
-    out = {"frida": "", "logcat": "", "dumpsys": ""}
+    out = {"frida": "", "logcat": "", "dumpsys": "", "strace": ""}
     for ref in refs:
         _, _, rest = ref.partition("://")
         bucket, _, key = rest.partition("/")
@@ -199,6 +216,8 @@ def _load_raw(store, refs: list[str]) -> dict[str, str]:
             out["logcat"] = text
         elif ref.endswith("dumpsys.txt"):
             out["dumpsys"] = text
+        elif ref.endswith("strace.txt"):
+            out["strace"] = text
     return out
 
 

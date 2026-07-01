@@ -39,11 +39,12 @@ def create_app() -> FastAPI:
         lifespan=lifespan,
     )
 
-    from aegis.api.routers import analyses, auth, samples
+    from aegis.api.routers import analyses, auth, corpus, samples
 
     app.include_router(auth.router)
     app.include_router(samples.router)
     app.include_router(analyses.router)
+    app.include_router(corpus.router)
 
     @app.get("/health", tags=["meta"])
     def health():

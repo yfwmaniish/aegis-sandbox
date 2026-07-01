@@ -35,6 +35,10 @@ def run(args: list[str], *, timeout: float = 120.0, input_text: str | None = Non
             args,
             capture_output=True,
             text=True,
+            # adb/logcat/dumpsys emit UTF-8 (and occasional raw bytes); without this
+            # Windows decodes as cp1252 and a single bad byte crashes the reader thread.
+            encoding="utf-8",
+            errors="replace",
             timeout=timeout,
             input=input_text,
             check=False,

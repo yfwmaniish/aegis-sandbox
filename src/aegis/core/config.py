@@ -61,19 +61,30 @@ class Settings(BaseSettings):
     llm_model: str = Field(default="claude-opus-4-8", alias="AEGIS_LLM_MODEL")
     llm_max_tokens: int = Field(default=8000, alias="AEGIS_LLM_MAX_TOKENS")
 
+    # VirusTotal comparison — hash-only lookup (never uploads the sample). Key from the
+    # environment; when unset the feature degrades gracefully.
+    virustotal_api_key: str | None = Field(default=None, alias="VIRUSTOTAL_API_KEY")
+
     @property
     def llm_enabled(self) -> bool:
         return bool(self.anthropic_api_key)
 
     # Dynamic detonation. ``sandbox_backend`` selects the orchestrator: "" disables
-    # dynamic (static-only); "avd" uses the free Android Emulator; "genymotion" uses a
-    # Genymotion device; "fake" replays canned telemetry (tests/demos). Only profiles
-    # other than static_only detonate.
+    # dynamic (static-only); "avd" uses the free Android Emulator (APK); "genymotion"
+    # uses a Genymotion device (APK); "docker" detonates ELF in an isolated Linux
+    # container; "windows" integrates a Windows guest for PE (must be configured);
+    # "fake" replays canned telemetry (tests/demos). Only non-static_only profiles detonate.
     sandbox_backend: str = Field(default="", alias="SANDBOX_BACKEND")
     genymotion_device: str = Field(default="aegis-android", alias="GENYMOTION_DEVICE")
     avd_name: str = Field(default="aegis-avd", alias="AVD_NAME")
     android_sdk_root: str | None = Field(default=None, alias="ANDROID_SDK_ROOT")
     frida_server_path: str | None = Field(default=None, alias="FRIDA_SERVER_PATH")
+    # Linux (ELF) Docker detonation image (built on first run if absent).
+    docker_sandbox_image: str = Field(default="aegis-linux-sandbox:latest",
+                                      alias="DOCKER_SANDBOX_IMAGE")
+    # Windows (PE) detonation guest — refuses to detonate unless both are set.
+    windows_vm_name: str | None = Field(default=None, alias="WINDOWS_VM_NAME")
+    windows_agent_url: str | None = Field(default=None, alias="WINDOWS_AGENT_URL")
     dynamic_max_runtime_seconds: int = Field(default=120, alias="DYNAMIC_MAX_RUNTIME_SECONDS")
     dynamic_network_policy: str = Field(default="sinkhole", alias="DYNAMIC_NETWORK_POLICY")
     # Refuse to detonate unless the device is verified to have no internet egress.
