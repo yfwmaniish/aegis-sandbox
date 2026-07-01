@@ -439,3 +439,52 @@ def get_virustotal(
     comparison = build_comparison(analysis.sample.sha256, vt,
                                   risk=analysis.risk_score, indicator_count=n_ind)
     return comparison.model_dump(mode="json")
+
+
+def _export_static_or_409(db: Session, analysis_id: uuid.UUID):
+    analysis = _get_analysis_or_404(db, analysis_id)
+    static_row = db.execute(
+        select(StaticReportRow).where(StaticReportRow.analysis_id == analysis_id)
+    ).scalar_one_or_none()
+    if static_row is None:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT,
+                            detail="report not available yet (analysis not completed)")
+    return analysis, static_row
+
+
+@router.get("/{analysis_id}/export/stix")
+def export_stix(
+    analysis_id: uuid.UUID,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Export the analysis as a STIX 2.1 bundle (malware SDO, IOC + YARA indicators,
+    ATT&CK attack-patterns, relationships). Deterministic ids. 409 until completed."""
+    from fastapi.responses import JSONResponse
+
+    from aegis.intel import to_stix_bundle
+
+    analysis, static_row = _export_static_or_409(db, analysis_id)
+    bundle = to_stix_bundle(static_row.report, sha256=analysis.sample.sha256,
+                            filename=analysis.sample.original_filename, risk=analysis.risk_score)
+    return JSONResponse(bundle, headers={
+        "Content-Disposition": f'attachment; filename="aegis_{analysis.sample.sha256[:12]}_stix.json"'})
+
+
+@router.get("/{analysis_id}/export/misp")
+def export_misp(
+    analysis_id: uuid.UUID,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Export the analysis as a MISP event (attributes + ATT&CK galaxy tags + YARA).
+    409 until completed."""
+    from fastapi.responses import JSONResponse
+
+    from aegis.intel import to_misp_event
+
+    analysis, static_row = _export_static_or_409(db, analysis_id)
+    event = to_misp_event(static_row.report, sha256=analysis.sample.sha256,
+                          filename=analysis.sample.original_filename, risk=analysis.risk_score)
+    return JSONResponse(event, headers={
+        "Content-Disposition": f'attachment; filename="aegis_{analysis.sample.sha256[:12]}_misp.json"'})

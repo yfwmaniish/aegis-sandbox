@@ -141,6 +141,14 @@ def test_full_flow_pe(client, minimal_pe):
     assert board["total"] >= 1
     assert board["flagged"] + board["clean"] == board["total"]
 
+    # STIX / MISP export.
+    stix = client.get(f"/v1/analyses/{aid}/export/stix", headers=headers)
+    assert stix.status_code == 200
+    assert stix.json()["type"] == "bundle"
+    misp = client.get(f"/v1/analyses/{aid}/export/misp", headers=headers)
+    assert misp.status_code == 200
+    assert "Event" in misp.json()
+
 
 def test_rbac_register_after_bootstrap(client):
     # Bootstrap admin.

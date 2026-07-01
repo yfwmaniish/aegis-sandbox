@@ -613,8 +613,12 @@ async function renderIntel(aid) {
       <span class="muted" style="font-size:12px">— ${sim?sim.corpus_size:0} in corpus</span></div>
     <div style="margin-top:6px">${simHTML}</div>
 
-    <div class="rule-head"><h3>Detection rules</h3><div class="tags">${tags}</div></div>
-    <div class="muted" style="font-size:12px;margin-bottom:6px">Auto-generated heuristics — review before deployment.</div>
+    <div class="rule-head"><h3>Detection rules</h3><div class="tags">${tags}</div>
+      <span style="flex:1"></span>
+      <button class="copybtn" onclick="downloadExport('stix')" title="STIX 2.1 bundle">STIX 2.1</button>
+      <button class="copybtn" onclick="downloadExport('misp')" title="MISP event">MISP</button>
+    </div>
+    <div class="muted" style="font-size:12px;margin-bottom:6px">Auto-generated heuristics — review before deployment. Export IOCs + rules + ATT&CK as STIX/MISP.</div>
 
     <div class="rule-head" style="margin-top:6px">
       <b style="font-size:13px">YARA</b>
@@ -642,6 +646,20 @@ function dlEl(id, filename) {
   const a = document.createElement("a");
   a.href = URL.createObjectURL(blob); a.download = filename; a.click();
   setTimeout(()=>URL.revokeObjectURL(a.href), 2000);
+}
+async function downloadExport(kind) {
+  if (!currentAid) return;
+  try {
+    const r = await fetch(`/v1/analyses/${currentAid}/export/${kind}`,
+      {headers: token ? {Authorization:"Bearer "+token} : {}});
+    if (!r.ok) throw new Error("HTTP " + r.status);
+    const blob = new Blob([await r.text()], {type:"application/json"});
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob); a.download = `aegis_${kind}.json`; a.click();
+    setTimeout(()=>URL.revokeObjectURL(a.href), 2000);
+  } catch (e) {
+    $("#aiMsg").className = "msg err"; $("#aiMsg").textContent = `${kind.toUpperCase()} export failed: ${e.message}`;
+  }
 }
 
 // ---- AI understanding ----
