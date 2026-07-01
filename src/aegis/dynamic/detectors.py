@@ -54,6 +54,25 @@ def detect(report: DynamicReport) -> list[SuspiciousIndicator]:
             evidence=c2[:10],
         ))
 
+    # 1b) C2 beacon — endpoints the sample tried to reach, captured by the sinkhole
+    #     (DNS resolutions / HTTP requests). In sinkhole mode the connect() lands on a
+    #     private sinkhole IP, so the attempted *domain/URL* is the real signal.
+    beacons = sorted({
+        e.object.value for e in ev
+        if e.category == EventCategory.NETWORK
+        and e.action in ("dns_query", "http_request") and e.object.value
+    })
+    if beacons:
+        out.append(SuspiciousIndicator(
+            id="dyn.c2_beacon", title="Attempted to contact external endpoint(s) at runtime",
+            severity=Severity.HIGH, confidence=0.8,
+            observed_facts=beacons[:12],
+            inference="The sample tried to resolve/reach external endpoints during "
+                      "detonation (captured by the sinkhole; no traffic left the host) — "
+                      "characteristic C2 / exfiltration behaviour.",
+            evidence=beacons[:12],
+        ))
+
     # 2) SMS sent at runtime (OTP/premium-SMS abuse).
     sms = [e for e in ev if e.category == EventCategory.SMS]
     if sms:

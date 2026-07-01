@@ -15,6 +15,7 @@ from aegis.dynamic.normalize import (
     parse_dumpsys_permissions,
     parse_frida_events,
     parse_logcat,
+    parse_sinkhole,
     parse_strace,
 )
 
@@ -32,6 +33,7 @@ def build_report(
     logcat: str = "",
     dumpsys: str = "",
     strace: str = "",
+    sinkhole: str = "",
     started_at: datetime | None = None,
     ended_at: datetime | None = None,
     exit_reason: str = "finished",
@@ -44,7 +46,8 @@ def build_report(
 
     for name, fn in (("frida", lambda: parse_frida_events(frida_jsonl)),
                      ("logcat", lambda: parse_logcat(logcat)),
-                     ("strace", lambda: parse_strace(strace))):
+                     ("strace", lambda: parse_strace(strace)),
+                     ("sinkhole", lambda: parse_sinkhole(sinkhole))):
         try:
             events.extend(fn())
         except Exception as exc:  # noqa: BLE001 - one collector failing must not abort

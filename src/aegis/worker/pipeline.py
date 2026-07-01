@@ -154,7 +154,7 @@ def _detonate(settings, store, session, analysis, static_report, profile, move) 
                 image=settings.genymotion_device, network_policy=settings.dynamic_network_policy,
             ),
             frida_jsonl=raw["frida"], logcat=raw["logcat"], dumpsys=raw["dumpsys"],
-            strace=raw["strace"],
+            strace=raw["strace"], sinkhole=raw["sinkhole"],
             exit_reason=det.exit_reason, raw_refs=coll.raw_refs,
         )
         return persist_dynamic_report(session, analysis, dyn_report)
@@ -202,7 +202,7 @@ def sample_ref(analysis, store, settings) -> str:
 
 
 def _load_raw(store, refs: list[str]) -> dict[str, str]:
-    out = {"frida": "", "logcat": "", "dumpsys": "", "strace": ""}
+    out = {"frida": "", "logcat": "", "dumpsys": "", "strace": "", "sinkhole": ""}
     for ref in refs:
         _, _, rest = ref.partition("://")
         bucket, _, key = rest.partition("/")
@@ -218,6 +218,8 @@ def _load_raw(store, refs: list[str]) -> dict[str, str]:
             out["dumpsys"] = text
         elif ref.endswith("strace.txt"):
             out["strace"] = text
+        elif ref.endswith("sinkhole.txt"):
+            out["sinkhole"] = text
     return out
 
 

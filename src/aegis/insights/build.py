@@ -142,7 +142,7 @@ def _capability_radar(sig: _Signals) -> list[CapabilityAxis]:
             (sig.perm_cat_present("telephony"), 15, "telephony permissions"),
         ]),
         ("network_c2", "Network / C2", [
-            (sig.has("net.hardcoded_ip_c2", "dyn.runtime_c2"), 55, "hard-coded C2 endpoint"),
+            (sig.has("net.hardcoded_ip_c2", "dyn.runtime_c2", "dyn.c2_beacon"), 55, "hard-coded C2 endpoint"),
             (sig.has("net.telegram_channel"), 40, "Telegram C2 channel"),
             (sig.has("net.hardcoded_ip"), 20, "hard-coded IP"),
             (dyn_net, 35, "live network traffic"),

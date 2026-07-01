@@ -82,6 +82,11 @@ class Settings(BaseSettings):
     # Linux (ELF) Docker detonation image (built on first run if absent).
     docker_sandbox_image: str = Field(default="aegis-linux-sandbox:latest",
                                       alias="DOCKER_SANDBOX_IMAGE")
+    # Live network-capture ("sinkhole") mode: detonate on a Docker --internal network
+    # (no real egress) alongside a DNS/HTTP sinkhole that records attempted endpoints.
+    docker_sinkhole: bool = Field(default=False, alias="DOCKER_SINKHOLE")
+    docker_sinkhole_image: str = Field(default="aegis-sinkhole:latest",
+                                       alias="DOCKER_SINKHOLE_IMAGE")
     # Windows (PE) detonation guest — refuses to detonate unless both are set.
     windows_vm_name: str | None = Field(default=None, alias="WINDOWS_VM_NAME")
     windows_agent_url: str | None = Field(default=None, alias="WINDOWS_AGENT_URL")

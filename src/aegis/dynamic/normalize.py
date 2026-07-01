@@ -251,3 +251,40 @@ def _strace_event(call, args, ret, pid, ts, raw_ref) -> NormalizedEvent | None:
     if call in ("clone", "clone3", "fork", "vfork"):
         return mk(EventCategory.PROCESS, "spawn", "process", ret)
     return None
+
+
+# ── sinkhole (live network-capture detonation) ───────────────────────────────
+# The sinkhole container logs one line per observed attempt (see the sinkhole script):
+#   DNS <query-name>
+#   HTTP <METHOD> <host> <path>
+_SINK_DNS = re.compile(r"^DNS\s+(?P<name>\S+)")
+_SINK_HTTP = re.compile(r"^HTTP\s+(?P<method>\S+)\s+(?P<host>\S+)\s+(?P<path>\S+)")
+
+
+def parse_sinkhole(text: str, raw_ref: str = "opaque://sinkhole") -> list[NormalizedEvent]:
+    """Parse the sinkhole's capture log into normalized NETWORK events — the endpoints the
+    sample *attempted* to reach (all resolved/served locally; nothing left the machine)."""
+    events: list[NormalizedEvent] = []
+    for raw in text.splitlines():
+        line = raw.strip()
+        if not line:
+            continue
+        d = _SINK_DNS.match(line)
+        if d:
+            name = d["name"].rstrip(".")
+            events.append(NormalizedEvent(
+                platform="linux", category=EventCategory.NETWORK, action="dns_query",
+                object=EventObject(type="domain", value=name), raw_ref=raw_ref,
+                collector="sinkhole", collector_version=_COLLECTOR_VERSION,
+            ))
+            continue
+        h = _SINK_HTTP.match(line)
+        if h:
+            url = f"http://{h['host']}{h['path']}"
+            events.append(NormalizedEvent(
+                platform="linux", category=EventCategory.NETWORK, action="http_request",
+                object=EventObject(type="url", value=url), raw_ref=raw_ref,
+                collector="sinkhole", collector_version=_COLLECTOR_VERSION,
+                detail={"method": h["method"], "host": h["host"]},
+            ))
+    return events

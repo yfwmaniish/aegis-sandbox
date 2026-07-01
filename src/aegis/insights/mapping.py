@@ -93,6 +93,8 @@ ATTACK_MAP: dict[str, list[tuple[str, str, str]]] = {
     "dyn.sms_sent": [("Impact", "T1582", "SMS Control")],
     "dyn.runtime_c2": [
         ("Command and Control", "T1437.001", "Application Layer Protocol: Web Protocols")],
+    "dyn.c2_beacon": [
+        ("Command and Control", "T1437.001", "Application Layer Protocol: Web Protocols")],
     "dyn.dynamic_code_load": [
         ("Defense Evasion", "T1407", "Download New Code at Runtime")],
     "dyn.dropper_chain": [

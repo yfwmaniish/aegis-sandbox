@@ -194,6 +194,12 @@ export SANDBOX_BACKEND=docker      # first run builds aegis-linux-sandbox:latest
 # submit an ELF with profile "standard"
 ```
 
+**Live network-capture ("sinkhole") mode** — `DOCKER_SINKHOLE=true` detonates the sample
+on a Docker `--internal` network (no route off the host) alongside a DNS/HTTP sinkhole
+that answers every query and logs it. The sample **attempts** its C2, and every domain/URL
+it reaches for is captured (`dyn.c2_beacon`, folded into peers + the behaviour graph +
+ATT&CK) — while nothing ever leaves the machine. Default off (pure air-gap `--network none`).
+
 ### Real detonation — `genymotion` (APK) / `windows` (PE)
 
 `genymotion`: same Android flow via `gmtool` + `adb` + Frida (`gmtool` may need a **paid**

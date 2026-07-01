@@ -59,6 +59,61 @@ _ANALYZE_SH = (
 )
 
 
+# --- sinkhole (live network-capture) image ---------------------------------
+# Answers every DNS query with its own IP and logs it; logs every HTTP request. Runs on a
+# Docker --internal network (no route off the host), so the sample *attempts* its C2 and
+# we record the endpoints, but nothing ever leaves the machine.
+_SINKHOLE_PY = r'''
+import socket, struct, threading, sys
+from http.server import BaseHTTPRequestHandler, HTTPServer
+def log(m): sys.stdout.write(m+"\n"); sys.stdout.flush()
+def own_ip():
+    try: return socket.gethostbyname(socket.gethostname())
+    except Exception: return "127.0.0.1"
+IP = own_ip()
+def qname(data):
+    off=12; parts=[]
+    while off < len(data):
+        n=data[off]
+        if n==0: off+=1; break
+        parts.append(data[off+1:off+1+n].decode("ascii","replace")); off+=1+n
+    return ".".join(parts), off
+def dns():
+    s=socket.socket(socket.AF_INET, socket.SOCK_DGRAM); s.bind(("0.0.0.0",53))
+    ipb=socket.inet_aton(IP)
+    while True:
+        try:
+            data,addr=s.recvfrom(512)
+            if len(data)<12: continue
+            name,end=qname(data); log("DNS "+name)
+            hdr=data[:2]+struct.pack(">HHHHH",0x8180,1,1,0,0)
+            q=data[12:end+4]
+            ans=b"\xc0\x0c"+struct.pack(">HHIH",1,1,60,4)+ipb
+            s.sendto(hdr+q+ans, addr)
+        except Exception as e: log("ERR dns "+str(e))
+class H(BaseHTTPRequestHandler):
+    def _h(self,m):
+        log("HTTP %s %s %s"%(m, self.headers.get("Host","-"), self.path))
+        try:
+            self.send_response(200); self.send_header("Content-Length","2"); self.end_headers()
+            self.wfile.write(b"ok")
+        except Exception: pass
+    def do_GET(self): self._h("GET")
+    def do_POST(self): self._h("POST")
+    def do_HEAD(self): self._h("HEAD")
+    def do_PUT(self): self._h("PUT")
+    def log_message(self,*a): pass
+log("SINKHOLE up ip="+IP)
+threading.Thread(target=dns, daemon=True).start()
+HTTPServer(("0.0.0.0",80), H).serve_forever()
+'''
+
+_SINKHOLE_DOCKERFILE = """FROM python:3.12-slim
+COPY sinkhole.py /sinkhole.py
+ENTRYPOINT ["python", "-u", "/sinkhole.py"]
+"""
+
+
 class DockerUnavailable(RuntimeError):
     """Raised when Docker / a Linux-container daemon is not available."""
 
@@ -70,6 +125,8 @@ class DockerLinuxOrchestrator(SandboxOrchestrator):
         self.settings = settings
         self.store = store
         self.image = getattr(settings, "docker_sandbox_image", None) or _DEFAULT_IMAGE
+        self.sinkhole = bool(getattr(settings, "docker_sinkhole", False))
+        self.sinkhole_image = getattr(settings, "docker_sinkhole_image", None) or "aegis-sinkhole:latest"
 
     # ── preflight ────────────────────────────────────────────────────────────
     @staticmethod
@@ -98,6 +155,19 @@ class DockerLinuxOrchestrator(SandboxOrchestrator):
         finally:
             shutil.rmtree(ctx, ignore_errors=True)
 
+    def _build_sinkhole_image(self) -> None:
+        ctx = Path(tempfile.mkdtemp(prefix="aegis-sink-ctx-"))
+        try:
+            (ctx / "sinkhole.py").write_text(_SINKHOLE_PY, encoding="utf-8", newline="\n")
+            (ctx / "Dockerfile").write_text(_SINKHOLE_DOCKERFILE, encoding="utf-8", newline="\n")
+            res = run(["docker", "build", "-t", self.sinkhole_image, str(ctx)], timeout=900)
+            if not res.ok:
+                raise DockerUnavailable(
+                    f"failed to build the sinkhole image '{self.sinkhole_image}'.\n"
+                    f"{(res.stderr or res.stdout)[-800:]}")
+        finally:
+            shutil.rmtree(ctx, ignore_errors=True)
+
     # ── lifecycle ────────────────────────────────────────────────────────────
     def provision(self, analysis_id: str, spec: EnvironmentSpec) -> SandboxSession:
         if not self._daemon_ok():
@@ -107,11 +177,16 @@ class DockerLinuxOrchestrator(SandboxOrchestrator):
             )
         if not self._image_exists():
             self._build_image()
+        if self.sinkhole and not run(
+                ["docker", "image", "inspect", self.sinkhole_image], timeout=30).ok:
+            self._build_sinkhole_image()
+        sid8 = uuid.uuid4().hex[:6]
         return SandboxSession(
             session_id=f"docker-{uuid.uuid4().hex[:12]}",
             analysis_id=analysis_id, spec=spec, snapshot_id=self.image,
-            extra={"container": f"aegis-{analysis_id[:8]}-{uuid.uuid4().hex[:6]}",
-                   "device_name": self.image, "isolated": "true"},
+            extra={"container": f"aegis-{analysis_id[:8]}-{sid8}",
+                   "device_name": self.image, "isolated": "true",
+                   "mode": "sinkhole" if self.sinkhole else "airgap"},
         )
 
     def stage_sample(self, session: SandboxSession, sample_ref: str) -> None:
@@ -127,15 +202,18 @@ class DockerLinuxOrchestrator(SandboxOrchestrator):
                 session_id=session.session_id, analysis_id=session.analysis_id,
                 completed=False, runtime_seconds=0.0, exit_reason="install_failed",
             )
-        # Isolation gate: this backend detonates only with the network disabled. If
-        # isolation is required, the invariant is structural (--network none below).
-        require = getattr(self.settings, "dynamic_require_isolation", True)
-        cmd = self._run_cmd(session.extra["container"], stage_dir, budget.max_runtime_seconds)
-        if require and "none" not in cmd:  # defensive: never detonate with egress
-            raise IsolationError("refusing to detonate: container network is not disabled")
-
         start = time.time()
-        res = run(cmd, timeout=budget.max_runtime_seconds + 60)
+        # Both modes are isolated by construction: air-gap uses --network none; sinkhole
+        # uses a Docker --internal network (no route off the host). No real egress either way.
+        if self.sinkhole:
+            res = self._execute_sinkhole(session, stage_dir, budget)
+        else:
+            cmd = self._run_cmd(session.extra["container"], stage_dir, budget.max_runtime_seconds)
+            require = getattr(self.settings, "dynamic_require_isolation", True)
+            if require and "none" not in cmd:  # defensive: never detonate with egress
+                raise IsolationError("refusing to detonate: container network is not disabled")
+            res = run(cmd, timeout=budget.max_runtime_seconds + 60)
+
         trace, exit_reason = self._split_output(res.stdout, res.rc)
         session.extra["strace"] = trace
         if not res.ok and not trace:
@@ -143,13 +221,37 @@ class DockerLinuxOrchestrator(SandboxOrchestrator):
             exit_reason = "crashed"
         return DetonationResult(
             session_id=session.session_id, analysis_id=session.analysis_id,
-            completed=bool(trace), runtime_seconds=round(time.time() - start, 2),
-            exit_reason=exit_reason,
+            completed=bool(trace) or bool(session.extra.get("sinkhole")),
+            runtime_seconds=round(time.time() - start, 2), exit_reason=exit_reason,
         )
 
+    def _execute_sinkhole(self, session, stage_dir, budget):
+        """Run the sample on an --internal network with a DNS/HTTP sinkhole attached."""
+        sid = session.extra["container"].rsplit("-", 1)[-1]
+        net = f"aegis-sinknet-{sid}"
+        sink = f"aegis-sink-{sid}"
+        session.extra["_sink_net"] = net
+        session.extra["_sink_c"] = sink
+        run(["docker", "network", "create", "--internal", net], timeout=60)
+        run(["docker", "run", "-d", "--name", sink, "--network", net,
+             "--cap-drop", "ALL", "--cap-add", "NET_BIND_SERVICE",
+             self.sinkhole_image], timeout=120)
+        ip = run(["docker", "inspect", "-f",
+                  "{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}", sink],
+                 timeout=30).stdout.strip()
+        time.sleep(2)  # let the sinkhole bind :53/:80 before the sample runs
+        cmd = self._run_cmd_sinkhole(session.extra["container"], stage_dir, net,
+                                     ip or "", budget.max_runtime_seconds)
+        res = run(cmd, timeout=budget.max_runtime_seconds + 60)
+        session.extra["sinkhole"] = run(["docker", "logs", sink], timeout=60).stdout
+        return res
+
     def collect(self, session: SandboxSession) -> DetonationResult:
-        ref = self._upload(session, "strace.txt", session.extra.get("strace", ""))
-        refs = [ref] if ref else []
+        refs = [
+            self._upload(session, "strace.txt", session.extra.get("strace", "")),
+            self._upload(session, "sinkhole.txt", session.extra.get("sinkhole", "")),
+        ]
+        refs = [r for r in refs if r]
         return DetonationResult(
             session_id=session.session_id, analysis_id=session.analysis_id,
             completed=True, runtime_seconds=0.0, exit_reason="collected",
@@ -157,17 +259,25 @@ class DockerLinuxOrchestrator(SandboxOrchestrator):
         )
 
     def teardown(self, session: SandboxSession) -> RollbackResult:
-        # --rm removes the container, but force-remove in case it lingered, then wipe
-        # the host staging dir (the only place the sample bytes touched the host).
+        # --rm removes the sample container, but force-remove in case it lingered; also
+        # tear down the sinkhole container + internal network; then wipe the host staging
+        # dir (the only place the sample bytes touched the host).
         cname = session.extra.get("container")
         if cname:
             run(["docker", "rm", "-f", cname], timeout=30)
+        sink = session.extra.get("_sink_c")
+        if sink:
+            run(["docker", "rm", "-f", sink], timeout=30)
+        net = session.extra.get("_sink_net")
+        if net:
+            run(["docker", "network", "rm", net], timeout=30)
         stage_dir = session.extra.get("stage_dir")
         if stage_dir:
             shutil.rmtree(stage_dir, ignore_errors=True)
+        detail = ("sample + sinkhole containers removed, internal network + host staging wiped"
+                  if sink else "container removed (--rm) + host staging wiped")
         return RollbackResult(
-            session_id=session.session_id, rolled_back=True, verified=True,
-            detail="container removed (--rm) + host staging wiped",
+            session_id=session.session_id, rolled_back=True, verified=True, detail=detail,
         )
 
     def reap_orphans(self, older_than_seconds: int) -> list[str]:
@@ -179,15 +289,32 @@ class DockerLinuxOrchestrator(SandboxOrchestrator):
         return reaped
 
     # ── helpers ──────────────────────────────────────────────────────────────
+    _ISOLATION_FLAGS = [
+        "--read-only", "--tmpfs", "/tmp:exec,size=128m",
+        "--cap-drop", "ALL", "--cap-add", "SYS_PTRACE",  # ptrace for strace only
+        "--security-opt", "no-new-privileges",
+        "--pids-limit", "256", "--memory", "768m", "--cpus", "1",
+    ]
+
     def _run_cmd(self, cname: str, stage_dir: str, seconds: int) -> list[str]:
-        """Build the locked-down `docker run` command (isolated, no egress)."""
+        """Build the locked-down `docker run` command (air-gapped, no network)."""
         return [
             "docker", "run", "--rm", "--name", cname,
             "--network", "none",                       # no egress — isolation invariant
-            "--read-only", "--tmpfs", "/tmp:exec,size=128m",
-            "--cap-drop", "ALL", "--cap-add", "SYS_PTRACE",  # ptrace for strace only
-            "--security-opt", "no-new-privileges",
-            "--pids-limit", "256", "--memory", "768m", "--cpus", "1",
+            *self._ISOLATION_FLAGS,
+            "-v", f"{stage_dir}:/sample:ro",
+            self.image, str(seconds),
+        ]
+
+    def _run_cmd_sinkhole(self, cname: str, stage_dir: str, net: str, dns_ip: str,
+                          seconds: int) -> list[str]:
+        """Same lock-down, but on a Docker --internal network (no host egress) with the
+        sinkhole as DNS — so the sample can *attempt* its C2 and we capture it."""
+        dns = ["--dns", dns_ip] if dns_ip else []
+        return [
+            "docker", "run", "--rm", "--name", cname,
+            "--network", net, *dns,                    # --internal net = no real egress
+            *self._ISOLATION_FLAGS,
             "-v", f"{stage_dir}:/sample:ro",
             self.image, str(seconds),
         ]
