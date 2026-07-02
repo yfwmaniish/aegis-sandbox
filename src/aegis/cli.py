@@ -113,7 +113,6 @@ def _doctor() -> int:
 
 def _scan(folder: str, *, recursive: bool, as_json: bool, virustotal: bool) -> int:
     """Batch-scan a folder and print a catch-rate scoreboard."""
-    import json
     import os
     from pathlib import Path
 

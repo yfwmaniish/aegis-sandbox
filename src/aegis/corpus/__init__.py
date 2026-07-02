@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from aegis.corpus.models import Scoreboard, ScanRow
+from aegis.corpus.models import ScanRow, Scoreboard
 from aegis.corpus.scan import scan_folder, scan_path
 from aegis.corpus.scoreboard import build_scoreboard, row_from_report
 

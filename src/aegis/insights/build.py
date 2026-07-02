@@ -293,7 +293,7 @@ def _behavior_graph(sig: _Signals, radar: list[CapabilityAxis]) -> BehaviorGraph
             hosts[h] = "live peer"
 
     net_cap = cap_ids.get("network_c2")
-    for i, (host, src) in enumerate(list(hosts.items())[:12]):
+    for host, src in list(hosts.items())[:12]:
         nid = f"net:{host}"
         nodes.append(GraphNode(id=nid, label=host, kind="host", weight=1.2, detail=src))
         anchor = net_cap or "sample"

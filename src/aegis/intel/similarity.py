@@ -26,7 +26,7 @@ class CorpusItem:
     file_type: str
     risk_score: float | None
     report: dict
-    feats: "Features" = field(init=False)
+    feats: Features = field(init=False)
 
     def __post_init__(self) -> None:
         self.feats = extract_features(self.report)

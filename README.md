@@ -1,5 +1,9 @@
 # Aegis Sandbox
 
+[![CI](https://github.com/yfwmaniish/aegis-sandbox/actions/workflows/ci.yml/badge.svg)](https://github.com/yfwmaniish/aegis-sandbox/actions/workflows/ci.yml)
+
+**▶ Demo walkthrough + pitch: [`DEMO.md`](DEMO.md)**
+
 AI-assisted, multi-OS **malware analysis** platform — static engine, **real isolated
 detonation** (Android + Linux), an LLM understanding layer, visualizations, threat-intel
 generation, a VirusTotal comparison, exportable reports and a corpus catch-rate

@@ -10,7 +10,6 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from aegis.api.deps import get_current_user, get_db
-from aegis.core.enums import AnalysisProfile, AnalysisState
 from aegis.api.schemas import (
     AnalysisCreate,
     AnalysisOut,
@@ -21,6 +20,7 @@ from aegis.api.schemas import (
     TimelineEntry,
     TimelinePage,
 )
+from aegis.core.enums import AnalysisProfile, AnalysisState
 from aegis.db.models import (
     AIUnderstandingRow,
     Analysis,
