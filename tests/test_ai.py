@@ -32,7 +32,9 @@ REPORT = {
 
 class TestConfigGate:
     def test_not_configured_without_key(self, monkeypatch):
-        monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+        # Empty env vars override any .env values (both providers must be unset).
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "")
+        monkeypatch.setenv("OPENROUTER_API_KEY", "")
         _clear_settings()
         try:
             assert U.is_configured() is False

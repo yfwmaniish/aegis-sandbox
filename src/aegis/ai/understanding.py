@@ -125,25 +125,32 @@ def _drop_bulky(block: dict | None) -> dict | None:
 
 
 def generate_understanding(report: dict, dynamic: dict | None = None) -> UnderstandingResult:
-    """Call Claude to produce a structured understanding of the analysis."""
+    """Produce a structured understanding of the analysis via the configured LLM provider
+    (direct Anthropic, or OpenRouter as an OpenAI-compatible fallback)."""
     settings = get_settings()
-    if not settings.llm_enabled:
+    provider = settings.llm_provider
+    if provider is None:
         return UnderstandingResult(
             available=False,
-            reason="LLM not configured — set ANTHROPIC_API_KEY to enable AI understanding.",
+            reason="LLM not configured — set ANTHROPIC_API_KEY or OPENROUTER_API_KEY "
+                   "to enable AI understanding.",
         )
+    user_prompt = (
+        "Analyze the following sandbox findings and return your structured understanding.\n\n"
+        f"FINDINGS (JSON):\n{_compact_report(report, dynamic)}"
+    )
+    if provider == "anthropic":
+        return _via_anthropic(settings, user_prompt)
+    return _via_openrouter(settings, user_prompt)
 
+
+def _via_anthropic(settings, user_prompt: str) -> UnderstandingResult:
     try:
         import anthropic  # lazy: optional dependency
     except ImportError:
         return UnderstandingResult(available=False, reason="anthropic SDK not installed")
 
     client = anthropic.Anthropic(api_key=settings.anthropic_api_key)
-    user_prompt = (
-        "Analyze the following sandbox findings and return your structured understanding.\n\n"
-        f"FINDINGS (JSON):\n{_compact_report(report, dynamic)}"
-    )
-
     try:
         resp = client.messages.parse(
             model=settings.llm_model,
@@ -164,8 +171,73 @@ def generate_understanding(report: dict, dynamic: dict | None = None) -> Underst
     if parsed is None:
         return UnderstandingResult(available=False, model=settings.llm_model,
                                    reason="model returned no parseable output")
-
     return UnderstandingResult(
         available=True, understanding=parsed, model=settings.llm_model,
         prompt_version=PROMPT_VERSION, review_required=True,
     )
+
+
+_OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
+
+
+def _via_openrouter(settings, user_prompt: str) -> UnderstandingResult:
+    import httpx
+
+    model = settings.openrouter_model
+    schema = AnalysisUnderstanding.model_json_schema()
+    system = (_SYSTEM + "\n\nReturn ONLY a single JSON object (no prose, no code fences) "
+              "that conforms to this JSON Schema:\n" + json.dumps(schema))
+    body = {
+        "model": model,
+        "messages": [
+            {"role": "system", "content": system},
+            {"role": "user", "content": user_prompt},
+        ],
+        "response_format": {"type": "json_object"},
+        "max_tokens": settings.openrouter_max_tokens,
+    }
+    headers = {
+        "Authorization": f"Bearer {settings.openrouter_api_key}",
+        "X-Title": "Aegis Sandbox",
+        "Content-Type": "application/json",
+    }
+    try:
+        r = httpx.post(_OPENROUTER_URL, json=body, headers=headers, timeout=180)
+    except httpx.HTTPError as exc:
+        return UnderstandingResult(available=False, model=model,
+                                   reason=f"OpenRouter request failed: {exc}")
+    if r.status_code != 200:
+        return UnderstandingResult(available=False, model=model,
+                                   reason=f"OpenRouter HTTP {r.status_code}: {r.text[:300]}")
+    try:
+        content = r.json()["choices"][0]["message"]["content"]
+    except (KeyError, IndexError, ValueError):
+        return UnderstandingResult(available=False, model=model,
+                                   reason="OpenRouter returned no message content")
+
+    parsed = _parse_understanding_json(content)
+    if parsed is None:
+        return UnderstandingResult(available=False, model=model,
+                                   reason="model returned no parseable JSON")
+    return UnderstandingResult(
+        available=True, understanding=parsed, model=model,
+        prompt_version=PROMPT_VERSION, review_required=True,
+    )
+
+
+def _parse_understanding_json(content: str) -> AnalysisUnderstanding | None:
+    """Extract + validate the JSON object from a chat completion (tolerates ```json
+    fences and surrounding prose by slicing the outermost braces)."""
+    if not content:
+        return None
+    text = content.strip()
+    try:
+        start = text.index("{")
+        end = text.rindex("}") + 1
+    except ValueError:
+        return None
+    try:
+        obj = json.loads(text[start:end])
+        return AnalysisUnderstanding.model_validate(obj)
+    except Exception:  # noqa: BLE001 - malformed/invalid model output is non-fatal
+        return None

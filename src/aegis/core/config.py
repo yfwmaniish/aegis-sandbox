@@ -60,6 +60,13 @@ class Settings(BaseSettings):
     anthropic_api_key: str | None = Field(default=None, alias="ANTHROPIC_API_KEY")
     llm_model: str = Field(default="claude-opus-4-8", alias="AEGIS_LLM_MODEL")
     llm_max_tokens: int = Field(default=8000, alias="AEGIS_LLM_MAX_TOKENS")
+    # OpenRouter (OpenAI-compatible gateway) — an alternative LLM provider when you have
+    # no direct Anthropic API key. Used only if ANTHROPIC_API_KEY is unset. Default is a
+    # cheap capable model; switch OPENROUTER_MODEL to anthropic/claude-sonnet-4.6 for
+    # higher quality once the account has credits.
+    openrouter_api_key: str | None = Field(default=None, alias="OPENROUTER_API_KEY")
+    openrouter_model: str = Field(default="openai/gpt-4o-mini", alias="OPENROUTER_MODEL")
+    openrouter_max_tokens: int = Field(default=4000, alias="OPENROUTER_MAX_TOKENS")
 
     # VirusTotal comparison — hash-only lookup (never uploads the sample). Key from the
     # environment; when unset the feature degrades gracefully.
@@ -67,7 +74,15 @@ class Settings(BaseSettings):
 
     @property
     def llm_enabled(self) -> bool:
-        return bool(self.anthropic_api_key)
+        return bool(self.anthropic_api_key or self.openrouter_api_key)
+
+    @property
+    def llm_provider(self) -> str | None:
+        if self.anthropic_api_key:
+            return "anthropic"
+        if self.openrouter_api_key:
+            return "openrouter"
+        return None
 
     # Dynamic detonation. ``sandbox_backend`` selects the orchestrator: "" disables
     # dynamic (static-only); "avd" uses the free Android Emulator (APK); "genymotion"
