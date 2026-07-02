@@ -90,6 +90,16 @@ def analyze_bytes(
         _run_with("office", report, lambda: _populate_office(report, data))
     elif file_type == FileType.SCRIPT:
         _run_with("script", report, lambda: _populate_script(report, data, filename))
+    elif file_type == FileType.LNK:
+        _run_with("lnk", report, lambda: _populate_simple(report, "lnk", data))
+    elif file_type == FileType.RTF:
+        _run_with("rtf", report, lambda: _populate_simple(report, "rtf", data))
+    elif file_type == FileType.HTML:
+        _run_with("html", report, lambda: _populate_simple(report, "html", data))
+    elif file_type == FileType.JAR:
+        _run_with("jar", report, lambda: _populate_simple(report, "jar", data))
+    elif file_type == FileType.ISO:
+        _run_with("iso", report, lambda: _populate_simple(report, "iso", data))
     elif file_type == FileType.ZIP:
         # ZIP/APK-project archives (e.g. apktool/APKEditor output) — the payload lives
         # in decompressed smali/dex, not a parseable manifest.
@@ -203,6 +213,18 @@ def _populate_script(report: StaticReport, data: bytes, filename: str | None) ->
 
     feats, indicators = script.analyze(data, filename)
     report.script = feats
+    report.indicators.extend(indicators)
+
+
+def _populate_simple(report: StaticReport, kind: str, data: bytes) -> None:
+    """Route to a single-arg analyzer (analyze(data)->(feats, indicators)) and store the
+    features on the matching report field."""
+    import importlib
+
+    module_name = {"html": "html_smuggle"}.get(kind, kind)
+    mod = importlib.import_module(f"aegis.static.{module_name}")
+    feats, indicators = mod.analyze(data)
+    setattr(report, kind, feats)
     report.indicators.extend(indicators)
 
 

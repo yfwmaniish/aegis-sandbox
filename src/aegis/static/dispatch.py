@@ -20,6 +20,10 @@ _ZIP = b"PK\x03\x04"
 _ZIP_EMPTY = b"PK\x05\x06"
 _PDF = b"%PDF-"
 _OLE = b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1"  # legacy Office / MS compound file
+_RTF = b"{\\rtf"
+_LNK = b"\x4c\x00\x00\x00\x01\x14\x02\x00\x00\x00\x00\x00\xc0\x00\x00\x00\x00\x00\x00\x46"
+_ISO_MAGIC = b"CD001"
+_ISO_OFFSETS = (0x8001, 0x8801, 0x9001)
 
 _SCRIPT_EXTS = {
     ".js": "javascript", ".jse": "javascript", ".mjs": "javascript",
@@ -47,6 +51,11 @@ _MIME = {
     FileType.PDF: "application/pdf",
     FileType.OFFICE: "application/vnd.ms-office",
     FileType.SCRIPT: "text/x-script",
+    FileType.LNK: "application/x-ms-shortcut",
+    FileType.RTF: "application/rtf",
+    FileType.HTML: "text/html",
+    FileType.JAR: "application/java-archive",
+    FileType.ISO: "application/x-iso9660-image",
     FileType.UNKNOWN: "application/octet-stream",
 }
 
@@ -74,6 +83,20 @@ def _zip_is_office(data: bytes) -> bool:
     if "[Content_Types].xml" not in names:
         return False
     return any(n.startswith(("word/", "xl/", "ppt/")) for n in names)
+
+
+def _zip_is_jar(data: bytes) -> bool:
+    """A JAR is a ZIP with a META-INF/MANIFEST.MF and Java ``.class`` entries."""
+    try:
+        with zipfile.ZipFile(BytesIO(data)) as zf:
+            names = zf.namelist()
+    except (zipfile.BadZipFile, OSError):
+        return False
+    return "META-INF/MANIFEST.MF" in names and any(n.endswith(".class") for n in names)
+
+
+def _is_iso(data: bytes) -> bool:
+    return any(data[off:off + 5] == _ISO_MAGIC for off in _ISO_OFFSETS if len(data) >= off + 5)
 
 
 def _looks_textual(data: bytes) -> bool:
@@ -111,6 +134,10 @@ def detect_file_type(data: bytes, filename: str | None = None) -> FileType:
     contents to tell a true APK/Office doc from a generic/project archive)."""
     if data[:5] == _PDF or _PDF in data[:1024]:
         return FileType.PDF
+    if data[:20] == _LNK:
+        return FileType.LNK
+    if data.lstrip()[:5] == _RTF:
+        return FileType.RTF
     if data[:8] == _OLE:
         return FileType.OFFICE            # legacy OLE Office (also .msg/.msi — treated as doc)
     if len(data) >= 4:
@@ -123,14 +150,24 @@ def detect_file_type(data: bytes, filename: str | None = None) -> FileType:
             return FileType.DEX
     if data[:2] == _MZ:
         return FileType.PE
+    if _is_iso(data):
+        return FileType.ISO
     if data[:4] in (_ZIP, _ZIP_EMPTY):
         if _zip_is_apk(data):
             return FileType.APK
         if _zip_is_office(data):
             return FileType.OFFICE
+        if _zip_is_jar(data):
+            return FileType.JAR
         return FileType.ZIP
-    if detect_script(data, filename):
-        return FileType.SCRIPT
+    if _looks_textual(data):
+        low = data[:8192].lstrip().lower()
+        # HTA is script (has app hosting); other HTML is treated as (smuggling-capable) HTML.
+        if b"<hta:application" not in low and (low.startswith((b"<!doctype html", b"<html"))
+                                              or b"<html" in low[:512]):
+            return FileType.HTML
+        if detect_script(data, filename):
+            return FileType.SCRIPT
     return FileType.UNKNOWN
 
 

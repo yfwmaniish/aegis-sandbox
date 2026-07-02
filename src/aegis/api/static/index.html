@@ -413,6 +413,36 @@ function docBlock(r) {
       <div>Linked dylibs</div><div>${pills((m.linked_dylibs||[]).slice(0,10))}</div>
       ${(m.rpaths||[]).length?`<div>@rpath</div><div>${pills(m.rpaths)}</div>`:""}
     </div>`; }
+  if (r.lnk) { const l=r.lnk;
+    return `<h2 style="margin-top:18px">Windows shortcut (.lnk)</h2><div class="kv">
+      <div>Target</div><div class="mono">${esc(l.target||"—")}</div>
+      <div>Arguments</div><div class="mono">${esc(l.arguments||"—")}</div>
+      <div>Working dir</div><div class="mono">${esc(l.working_dir||"—")}</div>
+    </div>`; }
+  if (r.rtf) { const t=r.rtf;
+    return `<h2 style="margin-top:18px">RTF</h2><div class="kv">
+      <div>OLE objects</div><div>${t.object_count}${t.has_ole_object?"":" (none)"}</div>
+      <div>Equation exploit</div><div>${t.has_equation}</div>
+      <div>Embedded PE</div><div>${t.embedded_pe}</div>
+      ${(t.control_words||[]).length?`<div>Control words</div><div>${pills(t.control_words)}</div>`:""}
+    </div>`; }
+  if (r.html) { const h=r.html;
+    return `<h2 style="margin-top:18px">HTML</h2><div class="kv">
+      <div>Smuggling score</div><div>${(h.smuggling_score*100).toFixed(0)}%</div>
+      <div>Base64 blob</div><div>${h.has_base64_blob?`yes (${h.longest_base64} chars)`:"no"}</div>
+      <div>Indicators</div><div>${pills(h.indicators)}</div>
+    </div>`; }
+  if (r.jar) { const j=r.jar;
+    return `<h2 style="margin-top:18px">JAR</h2><div class="kv">
+      <div>Main-Class</div><div class="mono">${esc(j.main_class||"—")}</div>
+      <div>Classes</div><div>${j.class_count} / ${j.entry_count} entries</div>
+      <div>Suspicious APIs</div><div>${pills(j.suspicious_apis)}</div>
+    </div>`; }
+  if (r.iso) { const s=r.iso;
+    return `<h2 style="margin-top:18px">Disk image (ISO)</h2><div class="kv">
+      <div>Volume</div><div class="mono">${esc(s.volume_id||"—")}</div>
+      <div>Contained lures</div><div>${pills(s.contained_hints)}</div>
+    </div>`; }
   return "";
 }
 

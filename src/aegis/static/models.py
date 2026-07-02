@@ -33,6 +33,11 @@ class FileType(str, Enum):
     PDF = "pdf"
     OFFICE = "office"
     SCRIPT = "script"
+    LNK = "lnk"
+    RTF = "rtf"
+    HTML = "html"
+    JAR = "jar"
+    ISO = "iso"
     UNKNOWN = "unknown"
 
 
@@ -226,6 +231,50 @@ class ScriptFeatures(BaseModel):
     longest_base64: int = 0
 
 
+class LNKFeatures(BaseModel):
+    target: str | None = None
+    arguments: str | None = None
+    working_dir: str | None = None
+    icon_location: str | None = None
+    relative_path: str | None = None
+    flags: list[str] = Field(default_factory=list)
+    is_unicode: bool = False
+
+
+class RTFFeatures(BaseModel):
+    object_count: int = 0
+    has_ole_object: bool = False
+    has_equation: bool = False          # Equation Editor (CVE-2017-11882/0802)
+    has_embedded_package: bool = False  # \objclass Package (embedded file/exe)
+    embedded_pe: bool = False           # MZ header found in \objdata hex
+    control_words: list[str] = Field(default_factory=list)
+
+
+class HTMLFeatures(BaseModel):
+    has_base64_blob: bool = False
+    longest_base64: int = 0
+    has_blob_api: bool = False          # Blob()/msSaveBlob/createObjectURL
+    has_download_attr: bool = False     # <a download>
+    has_data_uri: bool = False
+    has_octet_stream: bool = False
+    smuggling_score: float = 0.0
+    indicators: list[str] = Field(default_factory=list)
+
+
+class JARFeatures(BaseModel):
+    main_class: str | None = None
+    class_count: int = 0
+    entry_count: int = 0
+    has_manifest: bool = False
+    suspicious_apis: list[str] = Field(default_factory=list)
+
+
+class ISOFeatures(BaseModel):
+    volume_id: str | None = None
+    format: str = "iso9660"             # iso9660 | udf
+    contained_hints: list[str] = Field(default_factory=list)  # suspicious filenames seen
+
+
 class MachOFeatures(BaseModel):
     magic: str | None = None
     is_fat: bool = False
@@ -268,6 +317,11 @@ class StaticReport(BaseModel):
     office: OfficeFeatures | None = None
     script: ScriptFeatures | None = None
     macho: MachOFeatures | None = None
+    lnk: LNKFeatures | None = None
+    rtf: RTFFeatures | None = None
+    html: HTMLFeatures | None = None
+    jar: JARFeatures | None = None
+    iso: ISOFeatures | None = None
 
     def add_error(self, module: str, exc: BaseException) -> None:
         self.analyzer_errors[module] = f"{type(exc).__name__}: {exc}"

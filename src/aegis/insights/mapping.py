@@ -159,6 +159,24 @@ ATTACK_MAP: dict[str, list[tuple[str, str, str]]] = {
     # Mach-O
     "macho.encrypted": [("Defense Evasion", "T1027.002", "Software Packing")],
     "macho.rpath_set": [("Hijack Execution Flow", "T1574.004", "Dylib Hijacking")],
+    # LNK
+    "lnk.command_execution": [
+        ("Execution", "T1059.001", "Command and Scripting Interpreter: PowerShell"),
+        ("Initial Access", "T1566.001", "Spearphishing Attachment")],
+    "lnk.interpreter": [("Execution", "T1059", "Command and Scripting Interpreter")],
+    # RTF
+    "rtf.equation_exploit": [("Execution", "T1203", "Exploitation for Client Execution")],
+    "rtf.embedded_executable": [("Defense Evasion", "T1027", "Obfuscated Files or Information")],
+    "rtf.ole_object": [("Execution", "T1204.002", "User Execution: Malicious File")],
+    # HTML smuggling
+    "html.smuggling": [("Defense Evasion", "T1027.006", "HTML Smuggling")],
+    "html.suspicious_script": [("Defense Evasion", "T1027.006", "HTML Smuggling")],
+    # JAR
+    "jar.command_exec": [("Execution", "T1059", "Command and Scripting Interpreter")],
+    "jar.dynamic_load": [("Defense Evasion", "T1027", "Obfuscated Files or Information")],
+    # ISO container
+    "iso.motw_bypass_payload": [("Defense Evasion", "T1553.005", "Mark-of-the-Web Bypass")],
+    "iso.container": [("Defense Evasion", "T1553.005", "Mark-of-the-Web Bypass")],
 }
 
 # Canonical tactic ordering for the matrix columns (kill-chain left-to-right).

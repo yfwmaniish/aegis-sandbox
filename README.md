@@ -72,6 +72,11 @@ detonation, intelligence and reporting layers plug into it through clean interfa
   the download-and-execute stager pattern.
 - **Mach-O (macOS, thin + universal):** architectures, file type, linked dylibs, @rpath,
   code-signature and segment-encryption presence.
+- **Delivery/initial-access formats:** **.lnk** (Shell Link parse → command-line args,
+  living-off-the-land interpreters), **RTF** (embedded OLE, Equation Editor exploit,
+  hex-encoded PE), **HTML smuggling** (encoded blob + in-browser blob/download
+  reconstruction), **JAR** (Main-Class + Runtime.exec/URLClassLoader), and **ISO/IMG**
+  (Mark-of-the-Web-bypass container carrying .lnk/.exe lures).
 
 Every finding is **evidence-first** — it separates *observed facts* from *inference*
 (TR-DET-02 / NFR-18) and carries severity + confidence.
