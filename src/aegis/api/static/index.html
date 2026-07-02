@@ -139,6 +139,17 @@
   .cbars .bval { width:34px; flex:0 0 34px; font-weight:650; }
   .ctable { width:100%; font-size:12px; }
   .ctable td.v { font-weight:700; }
+  .ctable tbody tr.clickable { cursor:pointer; }
+  .ctable tbody tr.clickable:hover { background:var(--panel2); }
+  /* ---- batch results ---- */
+  .btable { width:100%; font-size:13px; border-collapse:collapse; }
+  .btable th,.btable td { padding:7px 10px; border-bottom:1px solid var(--border); text-align:left; }
+  .btable th { color:var(--muted); font-weight:600; font-size:12px; }
+  .btable tr.done { cursor:pointer; }
+  .btable tr.done:hover { background:var(--panel2); }
+  .btable .vb { font-weight:700; padding:1px 8px; border-radius:5px; color:#fff; font-size:11px; }
+  .btable .act button { font-size:11px; padding:3px 9px; margin-left:4px; }
+  .btable tr.sel { background:var(--panel2); box-shadow:inset 3px 0 0 var(--accent); }
 </style>
 </head>
 <body>
@@ -167,11 +178,11 @@
 
   <!-- UPLOAD -->
   <div class="panel hidden" id="uploadPanel">
-    <h2>Submit a sample</h2>
+    <h2>Submit sample(s)</h2>
     <div id="drop">
-      <p><b>Drop a file here</b> or click to choose</p>
-      <p class="muted">PE / ELF / APK supported. The file is <b>parsed only — never executed or installed.</b></p>
-      <input type="file" id="file" class="hidden">
+      <p><b>Drop one or more files here</b> or click to choose</p>
+      <p class="muted">PE / ELF / Mach-O / APK / PDF / Office / scripts / LNK / HTML / ISO / JAR — <b>parsed only, never executed.</b> Select multiple for a batch.</p>
+      <input type="file" id="file" class="hidden" multiple>
     </div>
     <div class="row" style="margin-top:12px">
       <div class="muted" id="fileName">No file selected</div>
@@ -184,8 +195,19 @@
       </div>
       <div style="flex:0"><button id="analyze" disabled>Analyze</button></div>
     </div>
-    <div class="msg muted">Dynamic detonation runs an APK and observes runtime behaviour. Requires a sandbox backend (Genymotion for real; otherwise a labelled simulation).</div>
+    <div class="msg muted">Multiple files run as a batch (each analyzed in turn). Dynamic detonation is slower — best with one or a few APKs.</div>
     <div class="msg" id="upMsg"></div>
+  </div>
+
+  <!-- BATCH RESULTS -->
+  <div class="panel hidden" id="batchPanel">
+    <div style="display:flex;align-items:center">
+      <h2 style="margin:0">Batch results <span class="muted" id="batchCount" style="font-size:13px;font-weight:400"></span></h2>
+      <span style="flex:1"></span>
+      <button class="ghost" id="batchClose">Close</button>
+    </div>
+    <div class="msg" id="batchMsg"></div>
+    <div id="batchBody"></div>
   </div>
 
   <!-- CORPUS SCOREBOARD -->
@@ -232,7 +254,7 @@
 const $ = s => document.querySelector(s);
 const tokenKey = "aegis_token", userKey = "aegis_user";
 let token = localStorage.getItem(tokenKey);
-let chosen = null;
+let chosen = [];
 let currentAid = null;
 
 function setAuthed(on, username) {
@@ -240,7 +262,7 @@ function setAuthed(on, username) {
   $("#uploadPanel").classList.toggle("hidden", !on);
   $("#logout").classList.toggle("hidden", !on);
   $("#corpusBtn").classList.toggle("hidden", !on);
-  if (!on) $("#corpusPanel").classList.add("hidden");
+  if (!on) { $("#corpusPanel").classList.add("hidden"); $("#batchPanel").classList.add("hidden"); }
   $("#who").textContent = on ? ("● " + (username || localStorage.getItem(userKey) || "")) : "";
 }
 
@@ -299,76 +321,148 @@ async function login(u,p) {
 }
 
 // ---- upload + analyze ----
-function pick(f) {
-  chosen = f;
-  $("#fileName").textContent = f ? `${f.name} — ${f.size.toLocaleString()} bytes` : "No file selected";
-  $("#analyze").disabled = !f;
+function pick(files) {
+  chosen = Array.from(files || []);
+  const n = chosen.length;
+  $("#fileName").textContent = n === 0 ? "No file selected"
+    : n === 1 ? `${chosen[0].name} — ${chosen[0].size.toLocaleString()} bytes`
+    : `${n} files selected — ${chosen.reduce((s,f)=>s+f.size,0).toLocaleString()} bytes total`;
+  $("#analyze").disabled = n === 0;
+  $("#analyze").textContent = n > 1 ? `Analyze ${n} files` : "Analyze";
 }
 const drop = $("#drop");
 drop.addEventListener("click", () => $("#file").click());
-$("#file").addEventListener("change", e => pick(e.target.files[0]));
+$("#file").addEventListener("change", e => pick(e.target.files));
 ["dragover","dragenter"].forEach(ev => drop.addEventListener(ev, e => {e.preventDefault(); drop.classList.add("hover");}));
 ["dragleave","drop"].forEach(ev => drop.addEventListener(ev, e => {e.preventDefault(); drop.classList.remove("hover");}));
-drop.addEventListener("drop", e => { if (e.dataTransfer.files[0]) pick(e.dataTransfer.files[0]); });
+drop.addEventListener("drop", e => { if (e.dataTransfer.files.length) pick(e.dataTransfer.files); });
 
 const sleep = ms => new Promise(r => setTimeout(r, ms));
+const TERMINAL = ["completed","failed_processing","failed_runtime","terminated_policy"];
 
-async function analyze() {
-  if (!chosen) return;
+function analyze() {
+  if (!chosen.length) return;
+  const profile = $("#profile").value;
+  return chosen.length === 1 ? analyzeSingle(chosen[0], profile) : runBatch(chosen, profile);
+}
+
+// Upload one file, create the analysis, poll to a terminal state; returns the analysis.
+async function analyzeOne(file, profile, onState) {
+  const fd = new FormData(); fd.append("file", file);
+  const sample = await api("/v1/samples", {method:"POST", body:fd});
+  let an = await api("/v1/analyses", {method:"POST", json:{sample_id:sample.id, profile}});
+  const started = Date.now();
+  const maxMs = profile !== "static_only" ? 8*60*1000 : 60*1000;
+  while (!TERMINAL.includes(an.state) && (Date.now()-started) < maxMs) {
+    if (onState) onState(an.state, Math.round((Date.now()-started)/1000));
+    await sleep(1500);
+    an = await api("/v1/analyses/"+an.id);
+  }
+  if (!TERMINAL.includes(an.state)) throw new Error("timed out (still "+an.state+")");
+  return an;
+}
+
+async function analyzeSingle(file, profile) {
   const m = $("#upMsg"); m.className="msg"; $("#analyze").disabled = true;
+  $("#batchPanel").classList.add("hidden");
   $("#resultPanel").classList.add("hidden");
+  const deton = profile !== "static_only";
   try {
-    m.innerHTML = '<span class="spin"></span> uploading…';
-    const fd = new FormData(); fd.append("file", chosen);
-    const sample = await api("/v1/samples", {method:"POST", body:fd});
-
-    const profile = $("#profile").value;
-    const detonating = profile !== "static_only";
-    m.innerHTML = detonating
-      ? '<span class="spin"></span> static analysis + detonating in sandbox… (boots an isolated emulator, ~3–5 min — don\'t refresh)'
+    m.innerHTML = deton
+      ? '<span class="spin"></span> static analysis + detonating in sandbox… (~3–5 min — don\'t refresh)'
       : '<span class="spin"></span> analyzing (parse only, not executed)…';
-    let an = await api("/v1/analyses", {method:"POST", json:{sample_id:sample.id, profile}});
-    const terminal = ["completed","failed_processing","failed_runtime","terminated_policy"];
-    // Detonation can take minutes (emulator boot + isolation + Frida run + collect);
-    // poll generously. Static-only completes synchronously on the POST above.
-    const started = Date.now();
-    const maxMs = detonating ? 8 * 60 * 1000 : 60 * 1000;
-    while (!terminal.includes(an.state) && (Date.now() - started) < maxMs) {
-      if (detonating) {
-        const secs = Math.round((Date.now() - started) / 1000);
-        m.innerHTML = `<span class="spin"></span> detonating in isolated sandbox… ${secs}s `
-          + `<span class="muted">(state: ${esc(an.state)})</span>`;
-      }
-      await sleep(1500);
-      an = await api("/v1/analyses/"+an.id);
-    }
-    if (!terminal.includes(an.state)) throw new Error("timed out waiting for analysis (still " + an.state + ")");
-
+    const an = await analyzeOne(file, profile, (state,secs)=>{
+      if (deton) m.innerHTML = `<span class="spin"></span> detonating in isolated sandbox… ${secs}s <span class="muted">(state: ${esc(state)})</span>`;
+    });
     if (an.state !== "completed") throw new Error("analysis ended in state: " + an.state + (an.error?(" — "+an.error):""));
-    const report = await api("/v1/analyses/"+an.id+"/report");
     m.className="msg ok"; m.textContent = "done";
-    render(an, report);
-
-    // Pull the dynamic report if a detonation profile was used.
-    if (profile !== "static_only") {
-      try {
-        const dyn = await api("/v1/analyses/"+an.id+"/dynamic");
-        renderDynamic(dyn);
-      } catch (e) {
-        $("#dynWrap").innerHTML = `<div class="panel" style="margin-top:14px"><h2>Dynamic analysis</h2>`
-          + `<div class="muted">No detonation ran — ${esc(String(e.message))}. `
-          + `Set a sandbox backend (SANDBOX_BACKEND=fake to simulate, or install Genymotion for real).</div></div>`;
-      }
-    }
-
-    // Visual analysis (deterministic, no API key) — folds in dynamic data if present.
-    try { renderVisuals(await api("/v1/analyses/"+an.id+"/visualizations")); } catch (e) { /* non-fatal */ }
-    // Threat intel: similar samples + generated detection rules.
-    renderIntel(an.id);
+    await loadReport(an.id);
   } catch (e) {
     m.className="msg err"; m.textContent = "error: " + e.message;
   } finally { $("#analyze").disabled = false; }
 }
+
+async function runBatch(files, profile) {
+  $("#analyze").disabled = true;
+  $("#resultPanel").classList.add("hidden");
+  $("#batchPanel").classList.remove("hidden");
+  $("#batchPanel").scrollIntoView({behavior:"smooth"});
+  $("#batchMsg").className="msg"; $("#batchMsg").textContent="";
+  $("#batchBody").innerHTML = `<table class="btable"><thead><tr><th>#</th><th>File</th>`
+    + `<th>Type</th><th>Verdict</th><th>Risk</th><th>Findings</th><th></th></tr></thead>`
+    + `<tbody id="batchRows"></tbody></table>`;
+  const rows = $("#batchRows"), upM = $("#upMsg"); upM.className="msg";
+  const deton = profile !== "static_only";
+  let done=0, flagged=0;
+  for (let i=0;i<files.length;i++){
+    const f = files[i];
+    const tr = document.createElement("tr");
+    tr.innerHTML = `<td>${i+1}</td><td class="mono">${esc(f.name)}</td>`
+      + `<td colspan="4"><span class="spin"></span> analyzing…</td><td></td>`;
+    rows.appendChild(tr);
+    $("#batchCount").textContent = `· ${done}/${files.length}`;
+    upM.innerHTML = `<span class="spin"></span> batch: analyzing ${i+1}/${files.length} — ${esc(f.name)}${deton?" (detonating…)":""}`;
+    try {
+      const an = await analyzeOne(f, profile);
+      if (an.state !== "completed") throw new Error(an.state + (an.error?(": "+an.error):""));
+      const report = await api("/v1/analyses/"+an.id+"/report");
+      const score = an.risk_score ?? 0; const [label,color]=verdictFor(score);
+      if (score>=25) flagged++;
+      tr.dataset.aid = an.id; tr.className="done";
+      tr.innerHTML = `<td>${i+1}</td><td class="mono">${esc(f.name)}</td>`
+        + `<td>${esc(report.file_type)}</td>`
+        + `<td><span class="vb" style="background:${color}">${label}</span></td>`
+        + `<td class="v">${score.toFixed(1)}</td><td>${report.indicators.length}</td>`
+        + `<td class="act"><button class="copybtn" data-view>View</button>`
+        + `<button class="copybtn" data-dl title="Download report">⬇</button></td>`;
+      tr.querySelector("[data-view]").addEventListener("click", ev=>{ev.stopPropagation(); loadReport(an.id);});
+      tr.querySelector("[data-dl]").addEventListener("click", ev=>{ev.stopPropagation(); downloadReportFor(an.id, f.name);});
+      tr.addEventListener("click", ()=>loadReport(an.id));
+    } catch(e) {
+      tr.innerHTML = `<td>${i+1}</td><td class="mono">${esc(f.name)}</td>`
+        + `<td colspan="4" style="color:var(--crit)">error: ${esc(e.message)}</td><td></td>`;
+    }
+    done++; $("#batchCount").textContent = `· ${done}/${files.length}`;
+  }
+  upM.className="msg ok";
+  upM.textContent = `batch done — ${flagged}/${files.length} flagged. Click a row (or View) to open its report.`;
+  $("#analyze").disabled = false;
+}
+
+// Render a full report (verdict + findings + dynamic + visuals + intel) for one analysis.
+async function renderFull(an, report) {
+  render(an, report);
+  try { renderDynamic(await api("/v1/analyses/"+an.id+"/dynamic")); }
+  catch (e) { $("#dynWrap").innerHTML = ""; }
+  try { renderVisuals(await api("/v1/analyses/"+an.id+"/visualizations")); } catch (e) { /* non-fatal */ }
+  renderIntel(an.id);
+}
+
+// Load and display any completed analysis by id (used by batch rows + the corpus table).
+async function loadReport(aid) {
+  const an = await api("/v1/analyses/"+aid);
+  if (an.state !== "completed") {
+    $("#batchMsg").className="msg err";
+    $("#batchMsg").textContent = "report unavailable — analysis state: " + an.state + (an.error?(" ("+an.error+")"):"");
+    return;
+  }
+  const report = await api("/v1/analyses/"+aid+"/report");
+  await renderFull(an, report);
+  document.querySelectorAll("#batchBody tr").forEach(tr => tr.classList.toggle("sel", tr.dataset.aid===aid));
+}
+
+async function downloadReportFor(aid, name) {
+  try {
+    const r = await fetch(`/v1/analyses/${aid}/report.html`, {headers: token ? {Authorization:"Bearer "+token} : {}});
+    if (!r.ok) throw new Error("HTTP " + r.status);
+    const url = URL.createObjectURL(new Blob([await r.text()], {type:"text/html"}));
+    const a = document.createElement("a");
+    a.href = url; a.download = `aegis_${String(name||aid).replace(/[^\w.-]+/g,"_")}.html`; a.click();
+    setTimeout(()=>URL.revokeObjectURL(url), 2000);
+  } catch (e) { $("#batchMsg").className="msg err"; $("#batchMsg").textContent = "download failed: " + e.message; }
+}
+
+function viewCorpus(aid) { if (!aid) return; $("#corpusPanel").classList.add("hidden"); loadReport(aid); }
 
 // ---- render ----
 function verdictFor(score) {
@@ -928,7 +1022,8 @@ function renderCorpus(b) {
 
   const rows = (b.rows||[]).slice().sort((x,y)=>y.risk_score-x.risk_score).slice(0,40);
   const table = rows.map(r => `
-    <tr><td class="v" style="color:${VCOL[r.verdict]||'var(--muted)'}">${esc(r.verdict)}</td>
+    <tr${r.analysis_id?` class="clickable" onclick="viewCorpus('${r.analysis_id}')" title="Open report"`:''}>
+      <td class="v" style="color:${VCOL[r.verdict]||'var(--muted)'}">${esc(r.verdict)}</td>
       <td class="v">${r.risk_score.toFixed(1)}</td>
       <td>${esc(r.file_type)}</td>
       <td class="mono">${esc(r.filename||r.sha256.slice(0,16))}</td>
@@ -957,6 +1052,7 @@ function renderCorpus(b) {
 
 $("#corpusBtn").addEventListener("click", openCorpus);
 $("#corpusClose").addEventListener("click", () => $("#corpusPanel").classList.add("hidden"));
+$("#batchClose").addEventListener("click", () => $("#batchPanel").classList.add("hidden"));
 $("#vt").addEventListener("click", compareVT);
 $("#export").addEventListener("click", exportReport);
 $("#explain").addEventListener("click", explain);
