@@ -24,7 +24,9 @@ class Settings(BaseSettings):
     api_port: int = Field(default=8000, alias="AEGIS_API_PORT")
     jwt_secret: str = Field(default="dev-insecure-change-me", alias="AEGIS_JWT_SECRET")
     jwt_alg: str = Field(default="HS256", alias="AEGIS_JWT_ALG")
-    jwt_ttl_minutes: int = Field(default=60, alias="AEGIS_JWT_TTL_MINUTES")
+    # Local single-user console: a long-lived token avoids mid-session expiry during
+    # long batch runs. Override with AEGIS_JWT_TTL_MINUTES for stricter deployments.
+    jwt_ttl_minutes: int = Field(default=1440, alias="AEGIS_JWT_TTL_MINUTES")
 
     # Database — explicit URL wins; otherwise build a Postgres URL from parts.
     database_url: str | None = Field(default=None, alias="DATABASE_URL")
