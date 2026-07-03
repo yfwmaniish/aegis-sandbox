@@ -21,7 +21,7 @@ def decompiled_project() -> bytes:
     buf = BytesIO()
     payload = (
         b".class public LX;\n"
-        b"const-string v0, \"http://203.0.113.50/gate.php\"\n"
+        b"const-string v0, \"http://45.155.205.10/gate.php\"\n"
         b"const-string v1, \"https://t.me/evilactor\"\n"
         b"invoke-virtual {}, Landroid/telephony/SmsManager;->sendTextMessage\n"
         b"invoke-static {}, Ljava/lang/Runtime;->exec\n"
@@ -46,7 +46,7 @@ class TestScanArchive:
         assert scan.embedded_apks == ["original/com.legit.app.apk"]
         assert scan.smali_count >= 60
         urls = {i.value for i in scan.iocs if i.type == "url"}
-        assert "http://203.0.113.50/gate.php" in urls
+        assert "http://45.155.205.10/gate.php" in urls
         assert any("SmsManager" in a for a in scan.suspicious_apis)
         assert any("Runtime.exec" in a or "command exec" in a for a in scan.suspicious_apis)
         assert any("location" in a.lower() for a in scan.suspicious_apis)

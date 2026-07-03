@@ -12,22 +12,41 @@ import ipaddress
 import re
 from dataclasses import dataclass
 
-# Common false-positive domains/strings that show up in benign binaries.
+# Common false-positive domains/strings that show up in benign binaries. These are
+# schema/namespace/vendor hosts, not indicators — matched as an exact host or 2-label
+# registrable suffix.
 _DOMAIN_ALLOWLIST = {
     "microsoft.com", "windows.com", "schemas.android.com", "w3.org", "apache.org",
     "google.com", "android.com", "gnu.org", "openssl.org", "mozilla.org",
     "schemas.xmlsoap.org", "verisign.com", "digicert.com", "example.com",
+    "schemas.microsoft.com", "adobe.com", "ns.adobe.com", "xmlpull.org", "java.sun.com",
+    "purl.org", "iptc.org", "sun.com", "oracle.com", "googleapis.com", "gstatic.com",
+    "goo.gl", "g.co", "bit.ly", "fabric.io", "crashlytics.com", "facebook.com",
+}
+# Substrings that mark a URL as a benign schema/namespace/SDK reference, not an IOC.
+_BENIGN_URL_HOSTS = (
+    "schemas.android.com", "schemas.microsoft.com", "ns.adobe.com", "w3.org",
+    "apache.org", "xmlpull.org", "java.sun.com", "javax.xml", "purl.org", "iptc.org",
+    "specification", "openxmlformats.org", "docbook.org", "jquery.com", "googleapis.com",
+    "gstatic.com", "schemas.openxmlformats", "www.w3", "xml.org",
+)
+
+# Well-known public DNS resolvers — appear in privacy/VPN apps, not C2.
+_DNS_RESOLVERS = {
+    "8.8.8.8", "8.8.4.4", "1.1.1.1", "1.0.0.1", "9.9.9.9", "149.112.112.112",
+    "208.67.222.222", "208.67.220.220", "4.2.2.1", "4.2.2.2", "4.2.2.3", "4.2.2.4",
+    "76.76.2.0", "76.76.10.0", "94.140.14.14", "94.140.15.15", "64.6.64.6", "64.6.65.6",
+    "185.228.168.9", "77.88.8.8", "156.154.70.1", "156.154.71.1",
 }
 
-# Private / non-routable ranges — almost always noise as an IOC.
-_PRIVATE_NETS = [
-    ipaddress.ip_network(c)
-    for c in ("10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "127.0.0.0/8",
-              "169.254.0.0/16", "0.0.0.0/8", "224.0.0.0/4", "255.255.255.255/32")
-]
+# Context words that mean a dotted-quad is a version/build string, not an IP.
+_VERSION_CTX = re.compile(
+    r"(?i)(version|ver\.|\bv\d|sdk|build|release|revision|\brev\b|library|copyright|"
+    r"\bapi\b|schema|namespace|dtd|ns/)")
 
 _RE = {
-    "url": re.compile(r"\bhttps?://[^\s\"'<>()\[\]{}]+", re.I),
+    # Exclude control chars (NUL etc.) so string-table junk doesn't bleed into a URL.
+    "url": re.compile(r"\bhttps?://[^\s\"'<>()\[\]{}\x00-\x1f]+", re.I),
     "domain": re.compile(
         r"\b(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+"
         r"(?:com|net|org|io|ru|cn|info|biz|xyz|top|club|online|site|app|dev|co|me|"
@@ -57,11 +76,37 @@ class IOC:
 
 
 def _is_public_ip(value: str) -> bool:
+    """A globally-routable, non-reserved unicast IP that isn't a well-known DNS resolver.
+
+    ``is_global`` already rejects private/loopback/link-local/multicast/reserved ranges,
+    which covers netmasks (255.255.255.0 is reserved) and 0.0.0.0/8 — the classic
+    dotted-quad false positives."""
     try:
         ip = ipaddress.ip_address(value)
     except ValueError:
         return False
-    return not any(ip in net for net in _PRIVATE_NETS)
+    if not getattr(ip, "is_global", False):
+        return False
+    if ip.is_multicast or ip.is_reserved or ip.is_loopback or ip.is_link_local:
+        return False
+    return value not in _DNS_RESOLVERS
+
+
+def _url_is_benign(url: str) -> bool:
+    low = url.lower()
+    return any(h in low for h in _BENIGN_URL_HOSTS)
+
+
+def _ip_is_versiony(text: str, start: int, end: int) -> bool:
+    """True if a dotted-quad at [start:end] is really a version/build string, not an IP:
+    it sits inside a longer dotted-number sequence or next to version-ish context."""
+    before = text[max(0, start-18):start]
+    after = text[end:end+3]
+    if before[-1:] == "." and before[-2:-1].isdigit():   # ...N.  -> part of a.b.c.d.e
+        return True
+    if after[:1] == "." and after[1:2].isdigit():        # d.e    -> longer sequence
+        return True
+    return bool(_VERSION_CTX.search(before))
 
 
 def _is_interesting_domain(value: str) -> bool:
@@ -86,14 +131,17 @@ def extract_iocs(text: str, source: str = "strings") -> list[IOC]:
         if existing is None or ioc.confidence > existing.confidence:
             found[ioc.key()] = ioc
 
-    for m in _RE["url"].findall(text):
-        add(IOC("url", m.rstrip(".,);]\"'"), 0.8, source))
+    for m in _RE["url"].finditer(text):
+        u = m.group(0).rstrip(".,);]\"'")
+        if not _url_is_benign(u):
+            add(IOC("url", u, 0.8, source))
     for m in _RE["domain"].findall(text):
         if _is_interesting_domain(m):
             add(IOC("domain", m.lower(), 0.5, source))
-    for m in _RE["ipv4"].findall(text):
-        if _is_public_ip(m):
-            add(IOC("ip", m, 0.6, source))
+    for m in _RE["ipv4"].finditer(text):
+        v = m.group(0)
+        if _is_public_ip(v) and not _ip_is_versiony(text, m.start(), m.end()):
+            add(IOC("ip", v, 0.6, source))
     for m in _RE["email"].findall(text):
         add(IOC("email", m.lower(), 0.4, source))
     for m in _RE["btc"].findall(text):

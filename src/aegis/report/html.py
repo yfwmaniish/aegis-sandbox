@@ -326,7 +326,9 @@ ul,ol { margin:6px 0; padding-left:22px; font-size:13px; }
 .noprint button { background:#3b4cb8; color:#fff; border:0; padding:9px 15px; border-radius:7px;
                   font-size:13px; cursor:pointer; }
 @media print { .noprint { display:none; } body { background:#fff; } .page { max-width:none; padding:0 6px; }
-               h2 { break-after:avoid; } .find,.tile,.tech,.sim,pre { break-inside:avoid; } }
+               h2 { break-after:avoid; }
+               .find,.tile,.tech,.sim,pre,.card,svg,.grid2>div,table { break-inside:avoid; }
+               .grid2 { display:block; } .grid2>.card { margin-bottom:14px; } }
 """
 
 

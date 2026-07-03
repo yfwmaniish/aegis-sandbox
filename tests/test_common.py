@@ -99,11 +99,14 @@ class TestIOCs:
         assert any(i.type == "domain" and "evilzone.xyz" in i.value for i in iocs)
 
     def test_public_vs_private_ip(self):
-        iocs = extract_iocs("c2 at 8.8.8.8 lan host 192.168.1.5 loopback 127.0.0.1")
+        iocs = extract_iocs("c2 at 45.155.205.10 lan host 192.168.1.5 loopback 127.0.0.1 "
+                            "resolver 8.8.8.8 netmask 255.255.255.0")
         ips = {i.value for i in iocs if i.type == "ip"}
-        assert "8.8.8.8" in ips
-        assert "192.168.1.5" not in ips  # private filtered
-        assert "127.0.0.1" not in ips    # loopback filtered
+        assert "45.155.205.10" in ips     # routable, non-resolver -> kept
+        assert "192.168.1.5" not in ips   # private filtered
+        assert "127.0.0.1" not in ips     # loopback filtered
+        assert "8.8.8.8" not in ips       # well-known DNS resolver filtered
+        assert "255.255.255.0" not in ips  # netmask/reserved filtered
 
     def test_domain_allowlist(self):
         iocs = extract_iocs("update.microsoft.com and sub.android.com")
@@ -118,5 +121,5 @@ class TestIOCs:
         assert any(i.type == "btc_address" for i in iocs)
 
     def test_dedup_keeps_highest_confidence(self):
-        iocs = extract_iocs("8.8.8.8 8.8.8.8 8.8.8.8")
+        iocs = extract_iocs("45.155.205.10 45.155.205.10 45.155.205.10")
         assert sum(i.type == "ip" for i in iocs) == 1

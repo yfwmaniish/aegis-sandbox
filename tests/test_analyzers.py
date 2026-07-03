@@ -100,7 +100,7 @@ class TestCorrelationIndicators:
         assert not any(i.id == "net.hardcoded_ip_c2" for i in r.indicators)
 
     def test_high_severity_sorted_first(self):
-        data = b"http://203.0.113.9/api and https://t.me/actor\x00" + b"q" * 64
+        data = b"http://45.155.205.10/api and https://t.me/actor\x00" + b"q" * 64
         r = analyze_bytes(data)
         assert r.indicators  # at least the C2 + telegram fired
         assert r.indicators[0].severity.value in {"critical", "high"}

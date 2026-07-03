@@ -116,12 +116,23 @@ def analyze_bytes(
 # ── Stage helpers ────────────────────────────────────────────────────────────
 
 
+_ARCHIVE_ENTROPY_TYPES = {FileType.APK, FileType.ZIP, FileType.JAR, FileType.OFFICE}
+
+
 def _run_entropy(report: StaticReport, data: bytes) -> None:
     try:
-        overall = shannon_entropy(data)
-        bands = chunked_entropy(data, _ENTROPY_CHUNK)
-        high = sum(1 for b in bands if b.entropy >= 7.0)
-        ratio = (high / len(bands)) if bands else 0.0
+        # An APK/JAR/OOXML is a ZIP container — whole-file entropy is always ~7.9 and tells
+        # you nothing. Measure the *decompressed* code (classes.dex / native .so) instead;
+        # that's where real packers (Bangcle/Jiagu/…) show up as high entropy.
+        code = (_archive_code_entropy(data)
+                if report.file_type in _ARCHIVE_ENTROPY_TYPES else None)
+        if code is not None:
+            overall, ratio, high = code
+        else:
+            overall = shannon_entropy(data)
+            bands = chunked_entropy(data, _ENTROPY_CHUNK)
+            high = sum(1 for b in bands if b.entropy >= 7.0)
+            ratio = (high / len(bands)) if bands else 0.0
         report.entropy = EntropySummary(
             overall=round(overall, 3),
             packing_likelihood=packing_likelihood(overall, ratio),
@@ -129,6 +140,37 @@ def _run_entropy(report: StaticReport, data: bytes) -> None:
         )
     except Exception as exc:  # noqa: BLE001
         report.add_error("entropy", exc)
+
+
+def _archive_code_entropy(data: bytes) -> tuple[float, float, int] | None:
+    """Size-weighted entropy over the decompressed classes*.dex + lib/*.so entries.
+    Returns (overall_entropy, high_entropy_ratio, high_entropy_count) or None if the
+    archive has no code entries / can't be read."""
+    import zipfile
+    from io import BytesIO
+
+    ents: list[tuple[int, float]] = []
+    try:
+        with zipfile.ZipFile(BytesIO(data)) as zf:
+            for n in zf.namelist():
+                is_dex = n.startswith("classes") and n.endswith(".dex")
+                is_so = n.startswith("lib/") and n.endswith(".so")
+                if not (is_dex or is_so):
+                    continue
+                try:
+                    blob = zf.read(n)
+                except (zipfile.BadZipFile, OSError):
+                    continue
+                if blob:
+                    ents.append((len(blob), shannon_entropy(blob)))
+    except (zipfile.BadZipFile, OSError):
+        return None
+    if not ents:
+        return None
+    total = sum(s for s, _ in ents)
+    overall = sum(s * e for s, e in ents) / total if total else 0.0
+    high = sum(1 for _, e in ents if e >= 7.0)
+    return overall, (high / len(ents)), high
 
 
 def _run_strings_and_iocs(
@@ -232,13 +274,30 @@ def _populate_simple(report: StaticReport, kind: str, data: bytes) -> None:
 _SPYWARE_CATEGORIES = {
     "SMS interception": ("sms", "sendtextmessage"),
     "command execution": ("runtime.exec", "processbuilder", "native command"),
-    "dynamic code loading": ("classloader", "packageinstaller"),
+    "dynamic code loading": ("dexclassloader", "inmemorydexclassloader"),
     "device fingerprinting": ("getdeviceid", "getsimserial", "imei"),
     "accessibility abuse": ("accessibilityservice",),
     "location tracking": ("location",),
     "audio/video/screen capture": ("mediarecorder", "audiorecord", "camera", "mediaprojection"),
     "contact/call harvesting": ("contactscontract", "calllog"),
     "clipboard theft": ("clipboard",),
+}
+
+# Permission-gated categories: an API hit only counts as a real capability if the app
+# also *declares* a matching permission. Code referencing an API it has no permission for
+# is almost always dead code from a bundled library (support/ad SDKs). Categories not
+# listed here need no permission (clipboard, dynamic loading, command exec).
+_CATEGORY_PERMS = {
+    "SMS interception": {"SEND_SMS", "RECEIVE_SMS", "READ_SMS", "WRITE_SMS", "RECEIVE_MMS",
+                         "RECEIVE_WAP_PUSH"},
+    "device fingerprinting": {"READ_PHONE_STATE", "READ_PRIVILEGED_PHONE_STATE",
+                              "READ_PHONE_NUMBERS"},
+    "accessibility abuse": {"BIND_ACCESSIBILITY_SERVICE"},
+    "location tracking": {"ACCESS_FINE_LOCATION", "ACCESS_COARSE_LOCATION",
+                          "ACCESS_BACKGROUND_LOCATION"},
+    "audio/video/screen capture": {"CAMERA", "RECORD_AUDIO", "CAPTURE_AUDIO_OUTPUT"},
+    "contact/call harvesting": {"READ_CONTACTS", "WRITE_CONTACTS", "READ_CALL_LOG",
+                                "WRITE_CALL_LOG", "GET_ACCOUNTS"},
 }
 
 
@@ -249,15 +308,22 @@ def _populate_archive(report: StaticReport, data: bytes, iocs: list[IOC]) -> Non
     iocs.extend(scan.iocs)
 
     # Fold scanned APIs/native-libs into the APK block when there is one.
+    declared_perms: set[str] = set()
     if report.apk is not None:
         report.apk.suspicious_apis = sorted(set(report.apk.suspicious_apis) | set(scan.suspicious_apis))
         report.apk.dex_count = report.apk.dex_count or scan.dex_count
+        declared_perms = {p.rsplit(".", 1)[-1].upper() for p in report.apk.permissions}
 
-    report.indicators.extend(_archive_indicators(scan))
+    # If we parsed a manifest, correlate capability APIs against declared permissions.
+    # A raw ZIP/project (no manifest) has no permission context, so skip correlation.
+    report.indicators.extend(_archive_indicators(
+        scan, declared_perms, correlate=report.apk is not None))
 
 
-def _archive_indicators(scan) -> list[SuspiciousIndicator]:
+def _archive_indicators(scan, declared_perms: set[str] | None = None,
+                        *, correlate: bool = False) -> list[SuspiciousIndicator]:
     out: list[SuspiciousIndicator] = []
+    declared_perms = declared_perms or set()
 
     if scan.is_decompiled_project:
         out.append(SuspiciousIndicator(
@@ -283,24 +349,35 @@ def _archive_indicators(scan) -> list[SuspiciousIndicator]:
             evidence=scan.embedded_apks[:8],
         ))
 
-    # Spyware capability fan-out from the decompressed API scan.
-    labels_lc = [a.lower() for a in scan.suspicious_apis]
-    hits = {
-        cat: [a for a in scan.suspicious_apis if any(k in a.lower() for k in keys)]
-        for cat, keys in _SPYWARE_CATEGORIES.items()
-        if any(any(k in lc for k in keys) for lc in labels_lc)
-    }
+    # Spyware capability fan-out from the decompressed API scan. When we have a manifest
+    # (correlate=True), a permission-gated category only counts if the matching permission
+    # is declared — code referencing e.g. Camera2 without the CAMERA permission is dead
+    # library code, not a capability. Categories with no permission gate always count.
+    hits: dict[str, list[str]] = {}
+    for cat, keys in _SPYWARE_CATEGORIES.items():
+        matched = [a for a in scan.suspicious_apis if any(k in a.lower() for k in keys)]
+        if not matched:
+            continue
+        need = _CATEGORY_PERMS.get(cat)
+        if correlate and need and not (need & declared_perms):
+            continue  # API present but no matching permission -> dead code
+        hits[cat] = matched
+
     if hits:
-        sev = Severity.HIGH if len(hits) >= 3 else Severity.MEDIUM
+        # HIGH only when several *corroborated* categories co-occur; a single category
+        # (or two) is common in benign apps and stays MEDIUM.
+        sev = Severity.HIGH if len(hits) >= 4 else Severity.MEDIUM if len(hits) >= 2 else Severity.LOW
         evidence = sorted({a for v in hits.values() for a in v})
         out.append(SuspiciousIndicator(
             id="archive.spyware_capabilities",
-            title=f"Spyware-class capabilities in code ({len(hits)} categories)",
+            title=f"Surveillance/exfiltration capabilities in code ({len(hits)} categories)",
             severity=sev,
-            confidence=min(0.9, 0.45 + 0.1 * len(hits)),
+            confidence=min(0.85, 0.35 + 0.12 * len(hits)),
             observed_facts=sorted(hits.keys()),
-            inference="Decompiled code references surveillance/exfiltration APIs spanning "
-                      "multiple categories — typical of Android spyware.",
+            inference="Code references surveillance/exfiltration APIs across "
+                      f"{len(hits)} categor{'ies' if len(hits) != 1 else 'y'} "
+                      + ("backed by matching permissions" if correlate else "(no manifest to "
+                         "correlate against)") + " — review for spyware behaviour.",
             evidence=evidence[:15],
         ))
 
@@ -324,12 +401,15 @@ _TELEGRAM_HOSTS = ("t.me", "telegram.me", "telegram.org", "telegram.dog")
 
 
 def _url_host_is_ip(url: str) -> bool:
+    """True only for URLs whose host is a *public, routable* IP. Loopback/private/reserved
+    IP hosts (http://127.0.0.1, http://192.168.x.x) are local/dev references, not C2."""
     host = urlparse(url).hostname or ""
     try:
-        ipaddress.ip_address(host)
-        return True
+        ip = ipaddress.ip_address(host)
     except ValueError:
         return False
+    return bool(getattr(ip, "is_global", False)) and not (
+        ip.is_multicast or ip.is_reserved or ip.is_loopback or ip.is_link_local)
 
 
 def _derive_correlation_indicators(report: StaticReport) -> None:
@@ -353,16 +433,11 @@ def _derive_correlation_indicators(report: StaticReport) -> None:
                       "legitimate apps almost always use named hosts.",
             evidence=ip_urls[:10],
         ))
-    elif ip_iocs:
-        report.indicators.append(SuspiciousIndicator(
-            id="net.hardcoded_ip",
-            title="Hardcoded public IP address",
-            severity=Severity.MEDIUM,
-            confidence=0.5,
-            observed_facts=[i.value for i in ip_iocs[:10]],
-            inference="Embedded public IPs can indicate hardcoded C2/infrastructure.",
-            evidence=[i.value for i in ip_iocs[:10]],
-        ))
+    # NOTE: bare public IPs (not in a URL) are intentionally NOT promoted to a finding.
+    # Dotted-quads in a code blob are overwhelmingly version/build strings, DNS resolvers
+    # or CDN addresses; flagging them produced heavy false positives on benign apps. A
+    # real hardcoded C2 shows up as an IP-host URL (net.hardcoded_ip_c2 above) or an
+    # ip:port endpoint; bare IPs remain as low-confidence IOCs for the analyst only.
 
     # 2) Telegram channel reference — frequent actor C2 / exfil / contact channel.
     tg = [i.value for i in url_iocs if any(h in i.value.lower() for h in _TELEGRAM_HOSTS)]

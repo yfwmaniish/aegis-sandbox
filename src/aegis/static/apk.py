@@ -49,6 +49,14 @@ _DANGEROUS_PERMISSIONS = {
     "android.permission.FOREGROUND_SERVICE", "android.permission.DISABLE_KEYGUARD",
 }
 
+# Signer subjects that mark an unofficial/repackaged build (AOSP test key + known
+# modding/cracking signers). Matched case-insensitively against the cert subject.
+_REPACK_SIGNERS = (
+    "android@android.com", "android debug", "revanced", "droid freedom", "droidfreedom",
+    "lucky patcher", "luckypatcher", "blackmart", "rockz", "modded", "cracked",
+    "ug_modz", "platform test", "test key", "testkey",
+)
+
 # DEX byte-scan markers: descriptor/string -> (api label, why it matters).
 _DEX_API_MARKERS: dict[bytes, str] = {
     b"Landroid/telephony/SmsManager": "SmsManager (send/intercept SMS)",
@@ -362,17 +370,23 @@ def _apk_indicators(feats: APKFeatures) -> list[SuspiciousIndicator]:
             evidence=["BIND_DEVICE_ADMIN"],
         ))
 
-    # Dynamic code loading / dropper (FR-8).
-    loaders = [a for a in feats.suspicious_apis if "ClassLoader" in a or "PackageInstaller" in a]
-    if loaders:
+    # Dynamic code loading / dropper (FR-8). PathClassLoader is the *default* Android
+    # class loader (present in essentially every app) and PackageInstaller is common for
+    # app updaters — neither alone is a signal. Only DexClassLoader / InMemoryDexClassLoader
+    # (loading external or in-memory dex) is the dropper/stager behaviour.
+    strong = [a for a in feats.suspicious_apis
+              if "DexClassLoader" in a or "InMemoryDexClassLoader" in a]
+    if strong:
         out.append(SuspiciousIndicator(
             id="apk.dynamic_code_loading",
-            title="Dynamic code loading / installer APIs",
+            title="Runtime DEX loading (dropper/stager)",
             severity=Severity.HIGH,
             confidence=0.6,
-            observed_facts=loaders,
-            inference="Loading code at runtime is a hallmark of droppers/stagers.",
-            evidence=loaders,
+            observed_facts=strong,
+            inference="Loading a DEX from an external file or memory at runtime is the "
+                      "defining behaviour of a dropper/stager (vs. the default PathClassLoader "
+                      "that every app uses).",
+            evidence=strong,
         ))
 
     # Debug-signed release.
@@ -385,6 +399,24 @@ def _apk_indicators(feats: APKFeatures) -> list[SuspiciousIndicator]:
             observed_facts=["certificate subject contains 'Android Debug'"],
             inference="Production apps are not normally debug-signed.",
             evidence=["certificate"],
+        ))
+
+    # Repackaged / unofficially-signed build: signed with the AOSP test key or a known
+    # modding signer. This is the correct label for cracked/modded apps — a *trust* issue
+    # (the build is unofficial), distinct from "malware".
+    signers = " ".join((c.subject or "") for c in feats.certificates).lower()
+    repack = [m for m in _REPACK_SIGNERS if m in signers]
+    if repack:
+        out.append(SuspiciousIndicator(
+            id="apk.repackaged",
+            title="Repackaged / unofficially-signed build",
+            severity=Severity.MEDIUM,
+            confidence=0.6,
+            observed_facts=[c.subject for c in feats.certificates if c.subject][:3],
+            inference="Signed with the AOSP test key or a known modding signer — this is a "
+                      "modified/cracked build, not the official app. Treat as untrusted; "
+                      "verify against the genuine publisher's signature.",
+            evidence=repack,
         ))
 
     # Request to install other packages (side-loading dropper).
