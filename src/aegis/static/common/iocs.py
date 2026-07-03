@@ -45,8 +45,9 @@ _VERSION_CTX = re.compile(
     r"\bapi\b|schema|namespace|dtd|ns/)")
 
 _RE = {
-    # Exclude control chars (NUL etc.) so string-table junk doesn't bleed into a URL.
-    "url": re.compile(r"\bhttps?://[^\s\"'<>()\[\]{}\x00-\x1f]+", re.I),
+    # Exclude control chars AND high bytes (0x7f-0xff) so binary string-table junk
+    # (e.g. "http://w�…") doesn't bleed into a URL — URLs are ASCII.
+    "url": re.compile(r"\bhttps?://[^\s\"'<>()\[\]{}\x00-\x1f\x7f-\xff]+", re.I),
     "domain": re.compile(
         r"\b(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+"
         r"(?:com|net|org|io|ru|cn|info|biz|xyz|top|club|online|site|app|dev|co|me|"
@@ -97,6 +98,45 @@ def _url_is_benign(url: str) -> bool:
     return any(h in low for h in _BENIGN_URL_HOSTS)
 
 
+_B58_ALPHABET = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
+
+
+def _valid_btc(addr: str) -> bool:
+    """Validate a base58check Bitcoin address (checksum) to kill false positives — random
+    base58-looking tokens (class names, hashes) otherwise match the loose regex."""
+    if addr.startswith("bc1"):
+        return len(addr) >= 14   # bech32; distinctive prefix, low FP — accept
+    try:
+        num = 0
+        for ch in addr:
+            num = num * 58 + _B58_ALPHABET.index(ch)
+    except ValueError:
+        return False
+    raw = num.to_bytes(25, "big", signed=False) if num < 256**25 else b""
+    # account for leading '1' -> leading 0x00 bytes
+    raw = b"\x00" * (len(addr) - len(addr.lstrip("1"))) + raw.lstrip(b"\x00")
+    if len(raw) != 25:
+        return False
+    import hashlib
+    return hashlib.sha256(hashlib.sha256(raw[:-4]).digest()).digest()[:4] == raw[-4:]
+
+
+def _url_host_ok(url: str) -> bool:
+    """A real URL has a host with a dot (domain) or a bare IP — rejects junk like
+    'http://w' left over after trimming binary bytes."""
+    from urllib.parse import urlparse
+    host = (urlparse(url).hostname or "")
+    if not host:
+        return False
+    if "." in host:
+        return True
+    try:
+        ipaddress.ip_address(host)
+        return True
+    except ValueError:
+        return False
+
+
 def _ip_is_versiony(text: str, start: int, end: int) -> bool:
     """True if a dotted-quad at [start:end] is really a version/build string, not an IP:
     it sits inside a longer dotted-number sequence or next to version-ish context."""
@@ -133,7 +173,7 @@ def extract_iocs(text: str, source: str = "strings") -> list[IOC]:
 
     for m in _RE["url"].finditer(text):
         u = m.group(0).rstrip(".,);]\"'")
-        if not _url_is_benign(u):
+        if _url_host_ok(u) and not _url_is_benign(u):
             add(IOC("url", u, 0.8, source))
     for m in _RE["domain"].findall(text):
         if _is_interesting_domain(m):
@@ -145,7 +185,8 @@ def extract_iocs(text: str, source: str = "strings") -> list[IOC]:
     for m in _RE["email"].findall(text):
         add(IOC("email", m.lower(), 0.4, source))
     for m in _RE["btc"].findall(text):
-        add(IOC("btc_address", m, 0.5, source))
+        if _valid_btc(m):
+            add(IOC("btc_address", m, 0.5, source))
     for m in _RE["registry"].findall(text):
         add(IOC("registry_key", m, 0.5, source))
     for m in _RE["path_win"].findall(text):
