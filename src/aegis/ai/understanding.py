@@ -198,7 +198,7 @@ def _via_openrouter(settings, user_prompt: str) -> UnderstandingResult:
     }
     headers = {
         "Authorization": f"Bearer {settings.openrouter_api_key}",
-        "X-Title": "Aegis Sandbox",
+        "X-Title": "MalwareTotal",
         "Content-Type": "application/json",
     }
     try:

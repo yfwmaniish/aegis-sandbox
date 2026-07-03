@@ -73,7 +73,7 @@ def _doctor() -> int:
     from aegis.orchestrator.genymotion import GenymotionOrchestrator
     from aegis.orchestrator.windows import WindowsOrchestrator
 
-    print("Aegis dynamic-analysis preflight")
+    print("MalwareTotal dynamic-analysis preflight")
     print("=" * 44)
 
     print("\n[avd] Android Emulator (APK) - free, no license (recommended)")
@@ -132,7 +132,7 @@ def _scan(folder: str, *, recursive: bool, as_json: bool, virustotal: bool) -> i
         print(board.model_dump_json(indent=2))
         return 0
 
-    print(f"\nAegis corpus scoreboard  -  {board.total} sample(s) scanned")
+    print(f"\nMalwareTotal corpus scoreboard  -  {board.total} sample(s) scanned")
     print("=" * 60)
     for r in sorted(board.rows, key=lambda x: x.risk_score, reverse=True):
         vt = ""
@@ -153,12 +153,12 @@ def _scan(folder: str, *, recursive: bool, as_json: bool, virustotal: bool) -> i
     if board.top_capabilities:
         print("  top caps : " + ", ".join(f"{c.label}({c.count})" for c in board.top_capabilities[:6]))
     if board.vt_checked:
-        print(f"  VT       : {board.vt_missed_count}/{board.vt_checked} caught by Aegis but MISSED by VirusTotal")
+        print(f"  VT       : {board.vt_missed_count}/{board.vt_checked} caught by MalwareTotal but MISSED by VirusTotal")
     return 0
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(prog="aegis", description="Aegis static analysis engine")
+    parser = argparse.ArgumentParser(prog="aegis", description="MalwareTotal static analysis engine")
     sub = parser.add_subparsers(dest="command", required=True)
 
     a = sub.add_parser("analyze", help="run static analysis on a file")

@@ -34,7 +34,7 @@ def main() -> None:
     import uvicorn
 
     url = f"http://{HOST if HOST != '0.0.0.0' else '127.0.0.1'}:{PORT}/ui/"
-    print(f"\n  Aegis Sandbox console ->  {url}\n")
+    print(f"\n  MalwareTotal console ->  {url}\n")
     if "--no-browser" not in sys.argv:
         Timer(1.2, lambda: webbrowser.open(url)).start()
     uvicorn.run("aegis.api.main:app", host=HOST, port=PORT, reload=False)

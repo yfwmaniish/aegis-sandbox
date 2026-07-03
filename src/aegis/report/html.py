@@ -277,59 +277,88 @@ def _similar_html(similar: SimilarResult) -> str:
 # ── Top-level ────────────────────────────────────────────────────────────────
 
 _CSS = """
-* { box-sizing: border-box; }
-body { font-family: -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
-       color:#1a202c; background:#f7fafc; margin:0; padding:0; }
-.page { max-width:960px; margin:0 auto; padding:28px 34px 60px; background:#fff; }
-h1 { font-size:24px; margin:0 0 2px; }
-h2 { font-size:17px; margin:26px 0 8px; padding-bottom:5px; border-bottom:2px solid #edf2f7; }
-h3 { font-size:13px; margin:14px 0 5px; color:#4a5568; }
-.muted { color:#718096; }
-.mono { font-family: ui-monospace, Consolas, monospace; font-size:12px; word-break:break-all; }
-.top { display:flex; align-items:center; gap:18px; border:1px solid #e2e8f0; border-radius:10px;
-       padding:16px 20px; margin-top:14px; }
-.score { font-size:44px; font-weight:800; line-height:1; }
-.badge { color:#fff; font-weight:700; padding:3px 12px; border-radius:6px; font-size:13px; }
-.metar { color:#718096; font-size:13px; margin-top:4px; }
+* { box-sizing:border-box; }
+body { font-family:"Inter",-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+       color:#0f172a; background:#eef2f7; margin:0; padding:0; font-variant-numeric:tabular-nums; }
+.page { max-width:980px; margin:22px auto; padding:0 0 44px; background:#fff; border-radius:16px;
+        overflow:hidden; box-shadow:0 1px 3px rgba(15,23,42,.08),0 20px 50px -30px rgba(15,23,42,.3); }
+.pad { padding:0 40px; }
+.masthead { background:linear-gradient(120deg,#0b1220 0%,#141d33 60%,#12283a 100%); color:#fff;
+            padding:26px 40px; display:flex; align-items:center; gap:16px; }
+.masthead .logo { width:42px; height:42px; flex:0 0 42px; }
+.masthead .wm { font-size:23px; font-weight:800; letter-spacing:-.02em; line-height:1; }
+.masthead .wm span { background:linear-gradient(135deg,#4f7dfb,#22d3ee); -webkit-background-clip:text; background-clip:text; color:transparent; }
+.masthead .sub { font-size:10px; font-weight:600; letter-spacing:.2em; text-transform:uppercase; color:#8ea0c0; margin-top:5px; }
+.masthead .gen { margin-left:auto; text-align:right; font-size:11px; color:#8ea0c0; }
+h1 { font-size:20px; margin:0; font-weight:750; letter-spacing:-.01em; }
+h2 { font-size:15px; margin:30px 0 10px; font-weight:700; letter-spacing:.01em; color:#0f172a;
+     padding-bottom:7px; border-bottom:1px solid #e6ebf2; display:flex; align-items:center; gap:8px; }
+h2::before { content:""; width:4px; height:15px; border-radius:2px; background:linear-gradient(#4f7dfb,#22d3ee); }
+h3 { font-size:12px; margin:14px 0 6px; color:#475569; font-weight:650; text-transform:uppercase; letter-spacing:.03em; }
+.muted { color:#64748b; }
+.mono { font-family:ui-monospace,"Cascadia Code",Consolas,monospace; font-size:12px; word-break:break-all; }
+.top { display:flex; align-items:center; gap:22px; border:1px solid #e6ebf2; border-radius:14px;
+       padding:20px 24px; margin-top:20px; background:linear-gradient(180deg,#fbfcfe,#f4f7fb); }
+.score { font-size:52px; font-weight:800; line-height:1; letter-spacing:-.03em; min-width:92px; text-align:center; }
+.score .u { font-size:14px; font-weight:600; color:#94a3b8; }
+.badge { color:#fff; font-weight:750; padding:5px 14px; border-radius:999px; font-size:12px;
+         text-transform:uppercase; letter-spacing:.04em; }
+.metar { color:#64748b; font-size:13px; margin-top:6px; }
 table { width:100%; border-collapse:collapse; font-size:13px; margin-top:4px; }
-th,td { text-align:left; padding:5px 9px; border-bottom:1px solid #edf2f7; vertical-align:top; }
-th { color:#718096; }
-table.kv td:first-child { color:#718096; width:150px; }
-.grid2 { display:grid; grid-template-columns:1fr 1fr; gap:18px; align-items:start; }
-.card { border:1px solid #e2e8f0; border-radius:10px; padding:12px 14px; }
+th,td { text-align:left; padding:7px 10px; border-bottom:1px solid #eef2f7; vertical-align:top; }
+th { color:#64748b; font-weight:600; font-size:11px; text-transform:uppercase; letter-spacing:.03em; }
+table.kv td:first-child { color:#64748b; width:150px; font-weight:500; }
+.grid2 { display:grid; grid-template-columns:1fr 1fr; gap:16px; align-items:start; }
+.card { border:1px solid #e6ebf2; border-radius:14px; padding:15px 17px; background:#fff; }
 .card h3 { margin-top:0; }
-.find { border-left:3px solid #718096; background:#f7fafc; border-radius:5px; padding:7px 10px; margin:6px 0; }
-.find .sev { color:#fff; font-size:10px; text-transform:uppercase; padding:1px 6px; border-radius:4px; }
-.find .inf { color:#4a5568; font-size:12px; margin-top:3px; }
-.find .ev { color:#718096; font-size:11px; font-family:ui-monospace,monospace; margin-top:3px; }
-.pill { display:inline-block; background:#edf2f7; border:1px solid #e2e8f0; border-radius:999px;
-        padding:1px 8px; font-size:11px; margin:2px 3px 2px 0; }
-.pill.danger { border-color:#dd6b20; color:#dd6b20; }
-.heat { display:grid; grid-template-columns:repeat(auto-fill,minmax(130px,1fr)); gap:7px; }
-.tile { border:1px solid #e2e8f0; border-radius:8px; padding:7px 9px; }
-.tile .t { font-size:11px; font-weight:650; } .tile .n { font-size:19px; font-weight:800; }
+.find { position:relative; border:1px solid #eef2f7; border-left:3px solid #94a3b8; background:#fbfcfe;
+        border-radius:9px; padding:9px 13px; margin:7px 0; }
+.find .sev { color:#fff; font-size:9.5px; font-weight:800; text-transform:uppercase; letter-spacing:.03em; padding:2px 8px; border-radius:5px; }
+.find b { font-size:13.5px; }
+.find .inf { color:#475569; font-size:12.5px; margin-top:5px; line-height:1.5; }
+.find .ev { color:#94a3b8; font-size:11px; font-family:ui-monospace,monospace; margin-top:5px; word-break:break-word; }
+.pill { display:inline-block; background:#f1f5f9; border:1px solid #e2e8f0; border-radius:999px;
+        padding:2px 9px; font-size:11px; margin:2px 4px 2px 0; color:#334155; }
+.pill.danger { border-color:#ea580c; color:#ea580c; background:#fff7ed; }
+.heat { display:grid; grid-template-columns:repeat(auto-fill,minmax(130px,1fr)); gap:8px; }
+.tile { border:1px solid #e6ebf2; border-radius:10px; padding:9px 11px; }
+.tile .t { font-size:11px; font-weight:650; } .tile .n { font-size:21px; font-weight:800; line-height:1.1; }
 .tile .p { font-size:9px; opacity:.9; word-break:break-word; }
-.attack { display:grid; grid-template-columns:repeat(auto-fill,minmax(160px,1fr)); gap:9px; }
-.acol .tac { font-size:10px; text-transform:uppercase; letter-spacing:.03em; color:#718096;
-             border-bottom:1px solid #e2e8f0; padding-bottom:3px; margin-bottom:5px; }
-.tech { border-left:3px solid #cbd5e0; background:#f7fafc; border-radius:5px; padding:4px 7px; margin-bottom:5px; }
-.tech .tid { font-size:10px; color:#718096; } .tech .tnm { font-size:12px; font-weight:600; }
-.tags { font-size:0; } .tag2 { font-size:10px; color:#3b82f6; border:1px solid #e2e8f0;
-        border-radius:999px; padding:1px 7px; margin-left:5px; }
-.sim { display:flex; gap:12px; border:1px solid #e2e8f0; border-radius:8px; padding:8px 11px; margin:6px 0; }
-.sim .ss { font-size:20px; font-weight:800; min-width:46px; }
-pre { background:#f7fafc; border:1px solid #e2e8f0; border-radius:8px; padding:11px;
-      font-size:11px; overflow:auto; white-space:pre-wrap; word-break:break-word; }
-ul,ol { margin:6px 0; padding-left:22px; font-size:13px; }
-.foot { margin-top:34px; padding-top:12px; border-top:1px solid #e2e8f0; color:#a0aec0; font-size:11px; }
-.noprint { position:fixed; top:14px; right:14px; }
-.noprint button { background:#3b4cb8; color:#fff; border:0; padding:9px 15px; border-radius:7px;
-                  font-size:13px; cursor:pointer; }
-@media print { .noprint { display:none; } body { background:#fff; } .page { max-width:none; padding:0 6px; }
+.attack { display:grid; grid-template-columns:repeat(auto-fill,minmax(165px,1fr)); gap:10px; }
+.acol .tac { font-size:10px; text-transform:uppercase; letter-spacing:.03em; color:#64748b;
+             border-bottom:1px solid #e6ebf2; padding-bottom:4px; margin-bottom:6px; font-weight:600; }
+.tech { border-left:3px solid #cbd5e1; background:#fbfcfe; border-radius:7px; padding:5px 9px; margin-bottom:6px; }
+.tech .tid { font-size:10px; color:#64748b; } .tech .tnm { font-size:12px; font-weight:600; }
+.tags { font-size:0; } .tag2 { font-size:10px; color:#4f7dfb; border:1px solid #dbe4f3;
+        background:#f5f8ff; border-radius:999px; padding:2px 8px; margin-left:5px; }
+.sim { display:flex; gap:14px; align-items:center; border:1px solid #e6ebf2; border-radius:10px; padding:10px 13px; margin:7px 0; }
+.sim .ss { font-size:22px; font-weight:800; min-width:46px; text-align:center; }
+pre { background:#0f1728; color:#e2e8f0; border:1px solid #1e293b; border-radius:10px; padding:14px;
+      font-size:11px; line-height:1.55; overflow:auto; white-space:pre-wrap; word-break:break-word;
+      font-family:ui-monospace,Consolas,monospace; }
+ul,ol { margin:7px 0; padding-left:22px; font-size:13px; line-height:1.6; }
+.foot { margin:36px 40px 0; padding-top:14px; border-top:1px solid #e6ebf2; color:#94a3b8; font-size:11px; }
+.noprint { position:fixed; top:16px; right:16px; }
+.noprint button { background:linear-gradient(135deg,#4f7dfb,#22d3ee); color:#fff; border:0; padding:10px 16px;
+                  border-radius:9px; font-size:13px; font-weight:600; cursor:pointer; box-shadow:0 8px 20px -8px rgba(79,125,251,.6); }
+@media print { .noprint { display:none; } body { background:#fff; margin:0; }
+               .page { max-width:none; margin:0; border-radius:0; box-shadow:none; }
+               .masthead { background:#0b1220 !important; -webkit-print-color-adjust:exact; print-color-adjust:exact; }
                h2 { break-after:avoid; }
                .find,.tile,.tech,.sim,pre,.card,svg,.grid2>div,table { break-inside:avoid; }
                .grid2 { display:block; } .grid2>.card { margin-bottom:14px; } }
 """
+
+_REPORT_LOGO = (
+    '<svg class="logo" viewBox="0 0 48 48" fill="none">'
+    '<defs><linearGradient id="rmt" x1="6" y1="3" x2="42" y2="45" gradientUnits="userSpaceOnUse">'
+    '<stop stop-color="#4f7dfb"/><stop offset="1" stop-color="#22d3ee"/></linearGradient></defs>'
+    '<path d="M24 3 41 9v13c0 11.2-7.2 19.3-17 23-9.8-3.7-17-11.8-17-23V9L24 3Z" '
+    'fill="url(#rmt)" fill-opacity="0.18" stroke="url(#rmt)" stroke-width="2" stroke-linejoin="round"/>'
+    '<circle cx="24" cy="23" r="8.5" fill="none" stroke="url(#rmt)" stroke-width="2"/>'
+    '<circle cx="24" cy="23" r="2.4" fill="url(#rmt)"/>'
+    '<path d="M24 9.5V13M24 33v3.5M9.5 23H13M35 23h3.5" stroke="url(#rmt)" stroke-width="2" stroke-linecap="round"/></svg>'
+)
 
 
 def build_report_html(
@@ -368,14 +397,20 @@ def build_report_html(
 
     return f"""<!doctype html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Aegis report — {_e(filename or sha256[:12])}</title><style>{_CSS}</style></head>
+<title>MalwareTotal report — {_e(filename or sha256[:12])}</title><style>{_CSS}</style></head>
 <body><div class="noprint"><button onclick="window.print()">Print / Save as PDF</button></div>
 <div class="page">
-  <h1>🛡️ Aegis Sandbox — Analysis Report</h1>
-  <div class="muted">Generated {gen}</div>
-
+  <div class="masthead">
+    {_REPORT_LOGO}
+    <div>
+      <div class="wm">Malware<span>Total</span></div>
+      <div class="sub">Malware Analysis Report</div>
+    </div>
+    <div class="gen">Generated<br>{gen}</div>
+  </div>
+  <div class="pad">
   <div class="top">
-    <div class="score" style="color:{color}">{(risk or 0):.0f}</div>
+    <div class="score" style="color:{color}">{(risk or 0):.0f}<span class="u">/100</span></div>
     <div><span class="badge" style="background:{color}">{label}</span>
       <div class="metar">{n_ind} indicator(s) · {n_ioc} IOC(s) · risk {(risk or 0):.1f}/100</div>
       <div class="metar"><b>Top drivers:</b> {drivers}</div></div>
@@ -401,6 +436,7 @@ def build_report_html(
 
   {_similar_html(similar)}
   {_rules_html(rules)}
+  </div>
 
-  <div class="foot">Aegis Sandbox · AI-assisted malware analysis · findings are heuristic and require analyst review.</div>
+  <div class="foot"><b>MalwareTotal</b> · AI-assisted malware analysis · findings are heuristic and require analyst review.</div>
 </div></body></html>"""

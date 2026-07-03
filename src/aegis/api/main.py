@@ -33,7 +33,7 @@ async def lifespan(app: FastAPI):
 def create_app() -> FastAPI:
     settings = get_settings()
     app = FastAPI(
-        title="Aegis Sandbox API",
+        title="MalwareTotal API",
         version="0.1.0",
         description="AI-assisted multi-OS malware analysis — control plane (static phase).",
         lifespan=lifespan,

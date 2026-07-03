@@ -47,7 +47,7 @@ class VTComparison(BaseModel):
     aegis_verdict: str = "UNKNOWN"
     aegis_indicators: int = 0
     headline: str = ""
-    contrast: bool = False  # True when Aegis flags what VT does not — the pitch case
+    contrast: bool = False  # True when MalwareTotal flags what VT does not — the pitch case
 
 
 def _aegis_verdict(risk: float | None) -> str:
@@ -128,14 +128,14 @@ def build_comparison(sha256: str, vt: VTResult, *, risk: float | None,
     contrast = False
 
     if not vt.available:
-        headline = f"Aegis: {verdict} ({(risk or 0):.0f}/100). {vt.reason or 'VirusTotal unavailable.'}"
+        headline = f"MalwareTotal: {verdict} ({(risk or 0):.0f}/100). {vt.reason or 'VirusTotal unavailable.'}"
     elif not vt.found:
         headline = (f"VirusTotal: no record of this file — Aegis: {verdict} ({(risk or 0):.0f}/100)")
         contrast = aegis_flags
     else:
         vt_flagged = vt.malicious + vt.suspicious
         headline = (f"VirusTotal: {vt.malicious}/{vt.total_engines} engines flagged — "
-                    f"Aegis: {verdict} ({(risk or 0):.0f}/100)")
+                    f"MalwareTotal: {verdict} ({(risk or 0):.0f}/100)")
         contrast = aegis_flags and vt_flagged == 0
 
     return VTComparison(

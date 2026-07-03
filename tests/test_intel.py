@@ -63,7 +63,7 @@ def test_yara_rule_structure_and_content():
     rep = _apk_report()
     bundle = generate_rules(rep, sha256="d"*64, risk=88.0)
     y = bundle.yara.text
-    assert y.startswith("rule Aegis_com_evil_spy")
+    assert y.startswith("rule MalwareTotal_com_evil_spy")
     assert "condition:" in y and "of ($s*)" in y
     assert "45.155.205.10" in y
     assert "t.me/evilchan" in y

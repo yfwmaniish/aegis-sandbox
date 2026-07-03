@@ -121,7 +121,7 @@ def to_stix_bundle(report: dict, *, sha256: str, filename: str | None,
         "type": "malware", "spec_version": "2.1", "id": malware_id,
         "created": now, "modified": now, "name": mal_name, "is_family": False,
         "malware_types": ["unknown"],
-        "description": f"Aegis Sandbox analysis (risk {(risk or 0):.0f}/100). "
+        "description": f"MalwareTotal analysis (risk {(risk or 0):.0f}/100). "
                        "Auto-generated; review before use.",
     })
 
@@ -224,14 +224,14 @@ def to_misp_event(report: dict, *, sha256: str, filename: str | None,
 
     rules = generate_rules(report, sha256=sha256, risk=risk)
     attrs.append({"type": "yara", "category": "Payload delivery",
-                  "value": rules.yara.text, "to_ids": True, "comment": "Aegis-generated"})
+                  "value": rules.yara.text, "to_ids": True, "comment": "MalwareTotal-generated"})
 
     tags = [{"name": f'aegis:risk="{(risk or 0):.0f}"'}]
     for _tactic, tid, tname in _techniques(report):
         tags.append({"name": f'misp-galaxy:mitre-attack-pattern="{tname} - {tid}"'})
 
     return {"Event": {
-        "info": f"Aegis Sandbox: {name}",
+        "info": f"MalwareTotal: {name}",
         "date": datetime.now(UTC).strftime("%Y-%m-%d"),
         "threat_level_id": _threat_level(risk),
         "analysis": 2,          # completed

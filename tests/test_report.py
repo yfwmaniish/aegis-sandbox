@@ -67,7 +67,7 @@ def test_report_contains_all_sections():
     doc = _build()
     for token in ("Analysis Report", "CRITICAL", "Findings", "Hard-coded C2",
                   "Capability radar", "MITRE ATT&CK", "Behaviour", "<svg",
-                  "Indicators of Compromise", "45.155.205.10", "rule Aegis_com_evil_spy",
+                  "Indicators of Compromise", "45.155.205.10", "rule MalwareTotal_com_evil_spy",
                   "Sigma", "Similar samples"):
         assert token in doc, f"missing: {token}"
 

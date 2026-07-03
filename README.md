@@ -1,4 +1,4 @@
-# Aegis Sandbox
+# MalwareTotal
 
 [![CI](https://github.com/yfwmaniish/aegis-sandbox/actions/workflows/ci.yml/badge.svg)](https://github.com/yfwmaniish/aegis-sandbox/actions/workflows/ci.yml)
 
