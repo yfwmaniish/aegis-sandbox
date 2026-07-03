@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>MalwareTotal — Corpus</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 48 48'%3E%3Cpath d='M24 3 41 9v13c0 11.2-7.2 19.3-17 23-9.8-3.7-17-11.8-17-23V9L24 3Z' fill='%234f7dfb'/%3E%3Ccircle cx='24' cy='23' r='8.5' fill='none' stroke='%23fff' stroke-width='2.5'/%3E%3Ccircle cx='24' cy='23' r='2.5' fill='%23fff'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg:#0a0e17; --bg2:#0c1120; --panel:#111725; --panel2:#161e30; --panel3:#1c2740;
+    --border:#232d42; --border2:#2e3a54; --text:#e8eef8; --muted:#8b97b0; --faint:#5c6a88;
+    --accent:#4f7dfb; --accent2:#22d3ee; --brand:linear-gradient(135deg,#4f7dfb,#22d3ee);
+    --crit:#fb5a6a; --high:#ff8a4c; --med:#f0c14b; --low:#4db8ff; --clean:#3ddc84;
+    --shadow:0 1px 2px rgba(0,0,0,.4),0 10px 30px -16px rgba(0,0,0,.6);
+    --mono:"IBM Plex Mono",ui-monospace,Consolas,monospace; --sans:"IBM Plex Sans",ui-sans-serif,system-ui,"Segoe UI",sans-serif;
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; color:var(--text); font:14px/1.55 var(--sans); font-variant-numeric:tabular-nums; letter-spacing:-.005em;
+    background:radial-gradient(1100px 500px at 80% -10%,rgba(34,211,238,.06),transparent 60%),
+      radial-gradient(900px 500px at 12% -5%,rgba(79,125,251,.09),transparent 55%),var(--bg); background-attachment:fixed; -webkit-font-smoothing:antialiased; }
+  ::-webkit-scrollbar { width:11px; height:11px; } ::-webkit-scrollbar-thumb { background:var(--border2); border-radius:6px; border:3px solid transparent; background-clip:content-box; }
+  header { position:sticky; top:0; z-index:20; display:flex; align-items:center; gap:14px; padding:12px 26px;
+           border-bottom:1px solid var(--border); background:rgba(10,14,23,.8); backdrop-filter:blur(14px) saturate(140%); }
+  .brand { display:flex; align-items:center; gap:11px; }
+  .brand .logo { width:30px; height:30px; }
+  .wordmark { font-size:18px; font-weight:700; letter-spacing:-.02em; line-height:1; }
+  .wordmark .t { background:var(--brand); -webkit-background-clip:text; background-clip:text; color:transparent; }
+  .brand .sub { display:block; font-size:9.5px; font-weight:600; letter-spacing:.18em; text-transform:uppercase; color:var(--faint); margin-top:3px; }
+  header a.back { margin-left:auto; font-size:13px; color:var(--muted); text-decoration:none; border:1px solid var(--border);
+                  background:var(--panel); padding:7px 13px; border-radius:9px; display:inline-flex; align-items:center; gap:7px; }
+  header a.back:hover { border-color:var(--border2); background:var(--panel2); color:var(--text); }
+  header a.back svg { width:15px; height:15px; }
+  .wrap { max-width:1680px; margin:0 auto; padding:26px clamp(20px,4vw,56px) 90px; }
+  h1 { font-size:22px; font-weight:750; letter-spacing:-.01em; margin:0 0 3px; }
+  .lede { color:var(--muted); font-size:13px; margin:0 0 20px; }
+  .panel { background:linear-gradient(180deg,var(--panel),var(--bg2)); border:1px solid var(--border); border-radius:14px; padding:20px 22px; margin-bottom:18px; box-shadow:var(--shadow); }
+  h2 { font-size:12px; text-transform:uppercase; letter-spacing:.08em; color:var(--muted); margin:0 0 14px; font-weight:700; }
+  .muted { color:var(--muted); } .mono { font-family:var(--mono); }
+  /* KPI row */
+  .kpis { display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:14px; margin-bottom:20px; }
+  .kpi { background:linear-gradient(180deg,var(--panel),var(--bg2)); border:1px solid var(--border); border-radius:14px; padding:18px 20px; box-shadow:var(--shadow); }
+  .kpi .big { font-size:38px; font-weight:800; line-height:1; letter-spacing:-.02em; }
+  .kpi .lab { font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:.04em; margin-top:8px; }
+  .kpi.win { border-color:var(--crit); background:linear-gradient(180deg,rgba(251,90,106,.15),rgba(251,90,106,.03)); }
+  .grid { display:grid; grid-template-columns:1fr 1fr; gap:18px; }
+  @media (max-width:820px){ .grid { grid-template-columns:1fr; } }
+  .card { background:var(--panel2); border:1px solid var(--border); border-radius:13px; padding:16px 18px; }
+  .card h3 { margin:0 0 12px; font-size:12px; text-transform:uppercase; letter-spacing:.05em; color:var(--muted); font-weight:650; }
+  .bars .brow { display:flex; align-items:center; gap:11px; margin:9px 0; font-size:12.5px; }
+  .bars .blab { width:140px; flex:0 0 140px; color:var(--muted); text-align:right; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .bars .btrack { flex:1; height:11px; background:rgba(255,255,255,.05); border-radius:6px; }
+  .bars .bfill { height:100%; min-width:7px; border-radius:6px; box-shadow:0 0 12px -2px currentColor; }
+  .bars .bval { width:38px; flex:0 0 38px; font-weight:700; text-align:right; }
+  table { width:100%; border-collapse:collapse; font-size:12.5px; }
+  th,td { text-align:left; padding:9px 12px; border-bottom:1px solid var(--border); }
+  th { color:var(--muted); font-weight:600; font-size:11px; text-transform:uppercase; letter-spacing:.04em; }
+  tbody tr { cursor:pointer; } tbody tr:hover td { background:rgba(255,255,255,.025); }
+  td.v { font-weight:700; }
+  .msg { padding:40px; text-align:center; color:var(--muted); }
+  .spin { width:16px;height:16px;border:2px solid var(--border2);border-top-color:var(--accent); border-radius:50%; display:inline-block; animation:s .7s linear infinite; vertical-align:-3px; }
+  @keyframes s { to { transform:rotate(360deg); } }
+</style>
+</head>
+<body>
+<header>
+  <div class="brand">
+    <svg class="logo" viewBox="0 0 48 48" fill="none" aria-hidden="true">
+      <defs><linearGradient id="mtg" x1="6" y1="3" x2="42" y2="45" gradientUnits="userSpaceOnUse"><stop stop-color="#4f7dfb"/><stop offset="1" stop-color="#22d3ee"/></linearGradient></defs>
+      <path d="M24 3 41 9v13c0 11.2-7.2 19.3-17 23-9.8-3.7-17-11.8-17-23V9L24 3Z" fill="url(#mtg)" fill-opacity="0.16" stroke="url(#mtg)" stroke-width="2" stroke-linejoin="round"/>
+      <circle cx="24" cy="23" r="8.5" fill="none" stroke="url(#mtg)" stroke-width="2"/><circle cx="24" cy="23" r="2.4" fill="url(#mtg)"/>
+      <path d="M24 9.5V13M24 33v3.5M9.5 23H13M35 23h3.5" stroke="url(#mtg)" stroke-width="2" stroke-linecap="round"/>
+    </svg>
+    <div><div class="wordmark">Malware<span class="t">Total</span></div><span class="sub">Corpus Dashboard</span></div>
+  </div>
+  <a class="back" href="/ui/"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>Console</a>
+</header>
+<div class="wrap">
+  <h1>Corpus catch-rate</h1>
+  <p class="lede">Aggregate detection metrics across every sample analyzed. Click a row to open its report.</p>
+  <div id="body"><div class="msg"><span class="spin"></span> loading…</div></div>
+</div>
+<script>
+const $ = s => document.querySelector(s);
+const token = localStorage.getItem("aegis_token");
+const VCOL = {CRITICAL:'var(--crit)',HIGH:'var(--high)',MEDIUM:'var(--med)',LOW:'var(--low)',CLEAN:'var(--clean)'};
+const esc = s => String(s ?? "").replace(/[&<>]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;"}[c]));
+
+function bars(items, colorFn) {
+  const mx = Math.max(1, ...items.map(i=>i.count));
+  return `<div class="bars">` + items.map(i=>{
+    const pct = Math.round(100*i.count/mx), col = colorFn ? colorFn(i.label) : 'var(--accent)';
+    return `<div class="brow"><div class="blab" title="${esc(i.label)}">${esc(i.label)}</div>`
+      + `<div class="btrack"><div class="bfill" style="width:${pct}%;background:${col};color:${col}"></div></div>`
+      + `<div class="bval">${i.count}</div></div>`;
+  }).join("") + `</div>`;
+}
+
+async function load() {
+  if (!token) { $("#body").innerHTML = `<div class="msg">Not signed in. Open the <a href="/ui/" style="color:var(--accent)">console</a> and sign in first.</div>`; return; }
+  let b;
+  try {
+    const r = await fetch("/v1/corpus/scoreboard", {headers:{Authorization:"Bearer "+token}});
+    if (r.status === 401) { $("#body").innerHTML = `<div class="msg">Session expired. <a href="/ui/" style="color:var(--accent)">Sign in again</a>.</div>`; return; }
+    if (!r.ok) throw new Error("HTTP "+r.status);
+    b = await r.json();
+  } catch(e) { $("#body").innerHTML = `<div class="msg">Failed to load: ${esc(e.message)}</div>`; return; }
+  render(b);
+}
+
+function render(b) {
+  if (!b.total) { $("#body").innerHTML = `<div class="msg">No completed analyses yet. Analyze samples in the console, then reopen this.</div>`; return; }
+  const riskItems = (b.risk_histogram||[]).map(x=>({label:x.label, count:x.count}));
+  const riskCol = l => l.startsWith("critical")?'var(--crit)':l.startsWith("high")?'var(--high)':l.startsWith("low")?'var(--med)':'var(--clean)';
+  const vtBox = b.vt_checked!=null ? `<div class="kpi win"><div class="big" style="color:var(--crit)">${b.vt_missed_count}</div><div class="lab">Caught · VT missed</div></div>` : "";
+  const rows = (b.rows||[]).slice().sort((x,y)=>y.risk_score-x.risk_score).map(r=>`
+    <tr onclick="openReport('${r.analysis_id||''}')">
+      <td class="v" style="color:${VCOL[r.verdict]||'var(--muted)'}">${esc(r.verdict)}</td>
+      <td class="v">${r.risk_score.toFixed(1)}</td>
+      <td>${esc(r.file_type)}</td>
+      <td class="mono">${esc(r.filename||r.sha256.slice(0,16))}</td>
+      <td class="muted">${esc((r.top_capabilities||[]).slice(0,2).join(", "))}</td>
+      ${b.vt_checked!=null?`<td>${r.vt_missed?'<span style="color:var(--crit)">VT-missed</span>':(r.vt_found?`VT ${r.vt_malicious}`:'—')}</td>`:''}</tr>`).join("");
+
+  $("#body").innerHTML = `
+    <div class="kpis">
+      <div class="kpi"><div class="big">${b.total}</div><div class="lab">Samples analyzed</div></div>
+      <div class="kpi"><div class="big" style="color:var(--high)">${b.flagged} <span style="font-size:18px;color:var(--muted)">(${b.flagged_pct}%)</span></div><div class="lab">Flagged</div></div>
+      <div class="kpi"><div class="big" style="color:var(--clean)">${b.clean}</div><div class="lab">Clean</div></div>
+      ${vtBox}
+    </div>
+    <div class="grid">
+      <div class="card"><h3>Verdict distribution</h3>${bars(b.verdict_counts, l=>VCOL[l]||'var(--accent)')}</div>
+      <div class="card"><h3>Risk distribution</h3>${bars(riskItems, riskCol)}</div>
+      <div class="card"><h3>File types</h3>${bars(b.file_type_counts)}</div>
+      <div class="card"><h3>Top capabilities</h3>${b.top_capabilities.length?bars(b.top_capabilities, ()=>'var(--high)'):'<div class="muted">—</div>'}</div>
+    </div>
+    <div class="panel" style="margin-top:18px"><h2>Most common findings</h2>
+      ${b.top_indicators.length?bars(b.top_indicators, ()=>'var(--accent)'):'<div class="muted">—</div>'}</div>
+    <div class="panel"><h2>Samples (${b.total})</h2>
+      <table><thead><tr><th>Verdict</th><th>Risk</th><th>Type</th><th>Sample</th><th>Top capabilities</th>${b.vt_checked!=null?'<th>VT</th>':''}</tr></thead>
+      <tbody>${rows}</tbody></table></div>`;
+}
+
+async function openReport(aid) {
+  if (!aid) return;
+  try {
+    const r = await fetch(`/v1/analyses/${aid}/report.html`, {headers:{Authorization:"Bearer "+token}});
+    if (!r.ok) throw new Error("HTTP "+r.status);
+    const url = URL.createObjectURL(new Blob([await r.text()], {type:"text/html"}));
+    window.open(url, "_blank"); setTimeout(()=>URL.revokeObjectURL(url), 60000);
+  } catch(e) { alert("Could not open report: "+e.message); }
+}
+load();
+</script>
+</body>
+</html>

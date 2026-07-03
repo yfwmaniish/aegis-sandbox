@@ -5,6 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>MalwareTotal — Malware Analysis Console</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 48 48'%3E%3Cpath d='M24 3 41 9v13c0 11.2-7.2 19.3-17 23-9.8-3.7-17-11.8-17-23V9L24 3Z' fill='%234f7dfb'/%3E%3Ccircle cx='24' cy='23' r='8.5' fill='none' stroke='%23fff' stroke-width='2.5'/%3E%3Ccircle cx='24' cy='23' r='2.5' fill='%23fff'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
   :root {
     --bg:#0a0e17; --bg2:#0c1120; --panel:#111725; --panel2:#161e30; --panel3:#1c2740;
@@ -14,12 +16,13 @@
     --brand:linear-gradient(135deg,#4f7dfb 0%,#22d3ee 100%);
     --crit:#fb5a6a; --high:#ff8a4c; --med:#f0c14b; --low:#4db8ff; --clean:#3ddc84;
     --shadow:0 1px 2px rgba(0,0,0,.4), 0 8px 24px -12px rgba(0,0,0,.5);
-    --mono:ui-monospace,"Cascadia Code","JetBrains Mono",SFMono-Regular,Consolas,monospace;
+    --mono:"IBM Plex Mono",ui-monospace,"Cascadia Code",SFMono-Regular,Consolas,monospace;
+    --sans:"IBM Plex Sans",ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
   }
   * { box-sizing:border-box; }
   html { scroll-behavior:smooth; }
-  body { margin:0; color:var(--text); font-variant-numeric:tabular-nums;
-         font:14px/1.55 "Inter",ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  body { margin:0; color:var(--text); font-variant-numeric:tabular-nums; letter-spacing:-.005em;
+         font:14px/1.55 var(--sans);
          background:
            radial-gradient(1100px 500px at 78% -10%, rgba(34,211,238,.06), transparent 60%),
            radial-gradient(900px 500px at 12% -5%, rgba(79,125,251,.09), transparent 55%),
@@ -43,9 +46,13 @@
   header h1 { font-size:18px; margin:0; font-weight:700; }
   .tag { font-size:11px; color:var(--muted); border:1px solid var(--border); background:var(--panel);
          padding:3px 10px; border-radius:999px; font-weight:500; }
-  #who { color:var(--clean); } #who:empty { display:none; }
+  #who { color:var(--clean); display:inline-flex; align-items:center; gap:6px; } #who:empty { display:none; }
+  #who::before { content:""; width:6px; height:6px; border-radius:50%; background:var(--clean); box-shadow:0 0 6px var(--clean); }
+  .rtd { display:inline-block; width:5px; height:5px; border-radius:50%; background:var(--clean);
+         box-shadow:0 0 5px var(--clean); margin-left:5px; vertical-align:1px; }
 
-  .wrap { max-width:1080px; margin:0 auto; padding:26px 24px 80px; }
+  .wrap { max-width:1680px; margin:0 auto; padding:26px clamp(20px,4vw,56px) 90px; }
+  input, select, button, textarea { font-family:var(--sans); }
   .panel { background:linear-gradient(180deg,var(--panel),var(--bg2)); border:1px solid var(--border);
            border-radius:14px; padding:20px 22px; margin-bottom:18px; box-shadow:var(--shadow); }
   .panel > h2:first-child, .panel > h2 { font-size:11.5px; text-transform:uppercase; letter-spacing:.09em;
@@ -57,9 +64,11 @@
     width:100%; padding:10px 12px; background:var(--bg2); border:1px solid var(--border);
     border-radius:9px; color:var(--text); font-size:14px; transition:.15s; font-family:inherit; }
   input:focus, select:focus { outline:none; border-color:var(--accent); box-shadow:0 0 0 3px rgba(79,125,251,.18); }
-  button { background:var(--accent); color:#fff; border:0; padding:10px 17px; border-radius:9px;
-           font-size:14px; font-weight:600; cursor:pointer; transition:.15s; font-family:inherit;
+  button { background:var(--accent); color:#fff; border:0; padding:10px 16px; border-radius:9px;
+           font-size:13.5px; font-weight:600; cursor:pointer; transition:.15s; font-family:inherit;
+           display:inline-flex; align-items:center; gap:7px; white-space:nowrap;
            box-shadow:0 1px 0 rgba(255,255,255,.12) inset, 0 6px 16px -8px rgba(79,125,251,.7); }
+  button svg { width:15px; height:15px; flex:0 0 auto; }
   button:hover { filter:brightness(1.08); transform:translateY(-1px); }
   button:active { transform:translateY(0); }
   button:disabled { opacity:.45; cursor:not-allowed; transform:none; box-shadow:none; }
@@ -77,6 +86,21 @@
           background:radial-gradient(120% 120% at 50% 0%, rgba(79,125,251,.12), transparent 70%); }
   #drop b { color:var(--text); }
   #drop .dropicon { width:40px; height:40px; margin:0 auto 10px; color:var(--accent); opacity:.9; }
+  .fmts { display:inline-flex; flex-wrap:wrap; gap:6px 9px; justify-content:center; font-size:11px;
+          font-family:var(--mono); color:var(--faint); letter-spacing:.02em; }
+  .fmts b { color:var(--border2); font-weight:400; }
+  .uploadbar { display:flex; align-items:center; gap:14px; flex-wrap:wrap; margin-top:14px; padding:11px 14px;
+               background:var(--panel2); border:1px solid var(--border); border-radius:12px; }
+  .filechip { display:inline-flex; align-items:center; gap:9px; min-width:0; font-size:13px; color:var(--muted); }
+  .filechip svg { width:17px; height:17px; flex:0 0 auto; color:var(--faint); }
+  .filechip span:last-child { font-family:var(--mono); font-size:12.5px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .filechip.has { color:var(--text); } .filechip.has svg { color:var(--accent); }
+  .uploadbar .field { display:inline-flex; align-items:center; gap:9px; }
+  .uploadbar .field label { margin:0; font-size:12px; color:var(--muted); }
+  select { appearance:none; -webkit-appearance:none; padding-right:34px; cursor:pointer;
+    background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%238b97b0' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+    background-repeat:no-repeat; background-position:right 12px center; }
+  .uploadbar select { width:auto; }
   .hidden { display:none !important; }
 
   /* ---- verdict hero ---- */
@@ -130,12 +154,19 @@
   .viz-card h3 { margin:0 0 2px; font-size:13px; font-weight:650; }
   .viz-card .sub { color:var(--muted); font-size:11.5px; margin-bottom:10px; }
   .viz-card svg { display:block; width:100%; height:auto; }
-  .heat { display:grid; grid-template-columns:repeat(auto-fill,minmax(120px,1fr)); gap:8px; }
-  .heat-tile { border-radius:8px; padding:8px 10px; border:1px solid var(--border); position:relative; }
-  .heat-tile .ht { font-size:12px; font-weight:650; }
-  .heat-tile .hc { font-size:20px; font-weight:700; line-height:1.1; }
-  .heat-tile .hp { font-size:10px; color:var(--muted); margin-top:3px; word-break:break-word; }
-  .heat-tile.on { color:#0d1117; }
+  .heat { display:grid; grid-template-columns:repeat(auto-fill,minmax(158px,1fr)); gap:9px; }
+  .heat-tile { border-radius:11px; padding:11px 12px; border:1px solid var(--border); background:var(--panel3); }
+  .heat-tile.on { border-color:color-mix(in srgb, var(--tc) 45%, var(--border));
+                  background:linear-gradient(180deg, color-mix(in srgb, var(--tc) 12%, var(--panel3)), var(--panel3));
+                  box-shadow:inset 3px 0 0 var(--tc); }
+  .heat-tile .hh { display:flex; align-items:baseline; justify-content:space-between; gap:8px; }
+  .heat-tile .ht { font-size:12px; font-weight:600; color:var(--text); }
+  .heat-tile .hc { font-size:22px; font-weight:800; line-height:1; color:var(--faint); }
+  .heat-tile .hp { margin-top:8px; display:flex; flex-wrap:wrap; gap:4px; }
+  .hperm { font-size:10px; font-family:var(--mono); color:var(--muted); background:rgba(255,255,255,.05);
+           border:1px solid var(--border); border-radius:5px; padding:1px 6px; }
+  .hperm.used { color:var(--text); border-color:var(--tc); background:color-mix(in srgb, var(--tc) 16%, transparent); }
+  .hnone { font-size:11px; color:var(--faint); }
   .attack-wrap { display:grid; grid-template-columns:repeat(auto-fill,minmax(150px,1fr)); gap:10px; }
   .attack-col .tac { font-size:11px; text-transform:uppercase; letter-spacing:.04em; color:var(--muted);
                      border-bottom:1px solid var(--border); padding-bottom:4px; margin-bottom:6px; }
@@ -147,6 +178,56 @@
   .drivers .pill { border-color:var(--high); }
   .legend { display:flex; gap:12px; flex-wrap:wrap; font-size:11px; color:var(--muted); margin-top:6px; }
   .legend i { width:9px; height:9px; border-radius:50%; display:inline-block; margin-right:4px; vertical-align:0; }
+  /* ---- interactive network graph ---- */
+  .graphwrap { position:relative; }
+  .netgraph { display:block; width:100%; height:auto; }
+  .gedge { fill:none; stroke:var(--border2); stroke-width:1.2; stroke-opacity:.55; transition:stroke .18s, stroke-opacity .18s, stroke-width .18s; }
+  .gedge.live { stroke:var(--crit); stroke-opacity:.7; stroke-dasharray:5 4; animation:dash 22s linear infinite; }
+  .gedge.on { stroke:var(--accent2); stroke-opacity:1; stroke-width:2; }
+  .gedge.live.on { stroke:var(--crit); }
+  @keyframes dash { to { stroke-dashoffset:-200; } }
+  .gnode { cursor:pointer; animation:gpop .5s cubic-bezier(.2,.9,.3,1.4) both; transition:opacity .18s; }
+  @keyframes gpop { from { opacity:0; transform:scale(.4); } to { opacity:1; transform:scale(1); } }
+  .gnode .gdot { stroke:var(--bg); stroke-width:2; transition:.18s; }
+  .gnode .ghalo { fill:transparent; opacity:0; transition:.18s; }
+  .gnode .glabel { fill:var(--muted); font-size:11px; font-family:var(--sans); font-weight:500; transition:.18s; pointer-events:none; }
+  .n-sample .gdot { fill:url(#gsample); } .n-cap .gdot { fill:url(#gcap); }
+  .n-live .gdot { fill:url(#glive); } .n-host .gdot { fill:url(#ghost); }
+  .n-sample .glabel { fill:var(--text); font-weight:650; }
+  .n-sample .ghalo { fill:var(--accent); opacity:.16; animation:pulse 2.6s ease-in-out infinite; }
+  @keyframes pulse { 0%,100%{ opacity:.10; } 50%{ opacity:.24; } }
+  .gnode:hover .gdot, .gnode.hi .gdot { stroke:#fff; filter:drop-shadow(0 0 7px currentColor); }
+  .gnode.hi .glabel { fill:var(--text); }
+  .n-cap.hi .gdot, .n-cap:hover .gdot { color:var(--high); } .n-live.hi .gdot { color:var(--crit); }
+  .n-host.hi .gdot { color:var(--low); } .n-sample.hi .gdot { color:var(--accent); }
+  .gnode.hi .ghalo { opacity:.3; fill:currentColor; }
+  .n-cap { color:var(--high); } .n-live { color:var(--crit); } .n-host { color:var(--low); } .n-sample { color:var(--accent); }
+  .gnode.dim { opacity:.22; }
+  .gtip { position:absolute; transform:translate(-50%,-100%); background:var(--panel3); border:1px solid var(--border2);
+          border-radius:9px; padding:8px 11px; font-size:12px; pointer-events:none; opacity:0; transition:opacity .15s;
+          box-shadow:var(--shadow); max-width:260px; z-index:5; }
+  .gtip.show { opacity:1; } .gtip b { display:block; word-break:break-all; } .gtip span { display:block; color:var(--muted); font-size:11px; margin-top:2px; }
+  .gtip .k { color:var(--accent2); text-transform:uppercase; letter-spacing:.05em; font-size:9.5px; }
+  .glegend { display:flex; gap:14px; flex-wrap:wrap; font-size:11px; color:var(--muted); margin-top:8px; align-items:center; }
+  .glegend i { width:9px; height:9px; border-radius:50%; display:inline-block; margin-right:5px; vertical-align:0; }
+  .ls-sample{ background:var(--accent); } .ls-cap{ background:var(--high); } .ls-live{ background:var(--crit); } .ls-host{ background:var(--low); }
+  .glegend .ghint { margin-left:auto; color:var(--faint); font-style:italic; }
+  /* ---- attack workflow (kill chain) ---- */
+  .wf-scroll { overflow-x:auto; padding:6px 2px 10px; }
+  .wf-flow { display:flex; align-items:stretch; gap:4px; min-width:min-content; }
+  .wf-stage { flex:0 0 190px; background:var(--panel3); border:1px solid var(--border);
+              border-top:3px solid var(--wc); border-radius:11px; padding:12px 13px; }
+  .wf-top { display:flex; align-items:center; gap:9px; margin-bottom:8px; }
+  .wf-num { width:22px; height:22px; border-radius:7px; background:var(--wc); color:#0a0e17;
+            font-size:12px; font-weight:800; display:flex; align-items:center; justify-content:center; flex:0 0 auto; }
+  .wf-ic { width:18px; height:18px; color:var(--wc); }
+  .wf-tac { font-size:12.5px; font-weight:650; color:var(--text); margin-bottom:9px; line-height:1.25; }
+  .wf-tl { display:flex; flex-direction:column; gap:6px; }
+  .wf-tech { font-size:11px; color:var(--muted); line-height:1.35; }
+  .wf-tid { font-family:var(--mono); font-size:10px; color:var(--wc); background:color-mix(in srgb,var(--wc) 14%,transparent);
+            border-radius:4px; padding:0 5px; margin-right:3px; }
+  .wf-arrow { display:flex; align-items:center; color:var(--border2); flex:0 0 22px; }
+  .wf-arrow svg { width:20px; height:20px; }
   /* ---- threat intel ---- */
   .sim { display:flex; align-items:center; gap:12px; background:var(--panel2); border:1px solid var(--border);
          border-radius:8px; padding:10px 12px; margin-bottom:8px; }
@@ -248,27 +329,27 @@
 
   <!-- UPLOAD -->
   <div class="panel hidden" id="uploadPanel">
-    <h2>Submit sample(s)</h2>
+    <h2>Submit samples</h2>
     <div id="drop">
       <svg class="dropicon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
         <path d="M12 16V4m0 0 4 4m-4-4L8 8"/><path d="M4 15v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3"/>
       </svg>
       <p style="font-size:15px;margin:0 0 6px"><b>Drop one or more files here</b> or click to choose</p>
-      <p class="muted" style="margin:0">PE · ELF · Mach-O · APK · PDF · Office · scripts · LNK · HTML · ISO · JAR — <b>parsed only, never executed.</b> Select multiple for a batch.</p>
+      <p class="muted" style="margin:0 0 12px">Select multiple for a batch. Parsed only — never executed.</p>
+      <div class="fmts">PE<b>·</b>ELF<b>·</b>Mach-O<b>·</b>APK<b>·</b>PDF<b>·</b>Office<b>·</b>Scripts<b>·</b>LNK<b>·</b>HTML<b>·</b>ISO<b>·</b>JAR</div>
       <input type="file" id="file" class="hidden" multiple>
     </div>
-    <div class="row" style="margin-top:12px">
-      <div class="muted" id="fileName">No file selected</div>
-      <div style="flex:0">
-        <label style="display:inline">Profile</label>
-        <select id="profile" style="padding:8px 10px;background:#0d1117;border:1px solid var(--border);border-radius:7px;color:var(--text)">
+    <div class="uploadbar">
+      <span class="filechip" id="fileName"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3v4a1 1 0 0 0 1 1h4"/><path d="M17 21H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h7l5 5v11a2 2 0 0 1-2 2Z"/></svg><span>No file selected</span></span>
+      <span style="flex:1"></span>
+      <div class="field"><label>Profile</label>
+        <select id="profile">
           <option value="static_only">Static only</option>
-          <option value="standard">Dynamic (detonate, APK)</option>
-        </select>
-      </div>
-      <div style="flex:0"><button id="analyze" disabled>Analyze</button></div>
+          <option value="standard">Dynamic (detonate APK)</option>
+        </select></div>
+      <button id="analyze" disabled>Analyze</button>
     </div>
-    <div class="msg muted">Multiple files run as a batch (each analyzed in turn). Dynamic detonation is slower — best with one or a few APKs.</div>
+    <div class="msg muted" style="margin-top:10px">Multiple files run as a batch (each analyzed in turn). Dynamic detonation is slower — best with one or a few APKs.</div>
     <div class="msg" id="upMsg"></div>
   </div>
 
@@ -286,7 +367,7 @@
   <!-- CORPUS SCOREBOARD -->
   <div class="panel hidden" id="corpusPanel">
     <div style="display:flex;align-items:center">
-      <h2 style="margin:0">📊 Corpus catch-rate</h2>
+      <h2 style="margin:0">Corpus catch-rate</h2>
       <span style="flex:1"></span>
       <button class="ghost" id="corpusClose">Close</button>
     </div>
@@ -301,9 +382,9 @@
       <div><span class="badge" id="badge">—</span>
            <div class="muted" id="verdictSub" style="margin-top:6px"></div></div>
       <span style="flex:1"></span>
-      <button id="vt" class="ghost" title="Compare with VirusTotal (sends only the SHA-256)">🔍 Compare with VirusTotal</button>
-      <button id="export" class="ghost" title="Open a standalone HTML/PDF report">⬇ Export report</button>
-      <button id="explain" title="Generate a Claude-written analysis">✨ Explain with AI</button>
+      <button id="vt" class="ghost" title="Compare with VirusTotal (sends only the SHA-256)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>Compare with VirusTotal</button>
+      <button id="export" class="ghost" title="Open a standalone HTML/PDF report"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 15V3m0 12-4-4m4 4 4-4"/><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></svg>Export report</button>
+      <button id="explain" title="Generate an AI-written analysis"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v4M12 17v4M3 12h4M17 12h4M6 6l2 2M16 16l2 2M18 6l-2 2M8 16l-2 2"/><circle cx="12" cy="12" r="3"/></svg>Explain with AI</button>
     </div>
     <div id="vtWrap"></div>
     <div class="msg" id="aiMsg"></div>
@@ -340,7 +421,7 @@ function setAuthed(on, username) {
     $("#batchPanel").classList.add("hidden");
     $("#resultPanel").classList.add("hidden");
   }
-  $("#who").textContent = on ? ("● " + (username || localStorage.getItem(userKey) || "")) : "";
+  $("#who").textContent = on ? (username || localStorage.getItem(userKey) || "") : "";
 }
 
 async function api(path, {method="GET", body=null, json=null}={}) {
@@ -407,9 +488,10 @@ async function login(u,p) {
 function pick(files) {
   chosen = Array.from(files || []);
   const n = chosen.length;
-  $("#fileName").textContent = n === 0 ? "No file selected"
+  $("#fileName span:last-child").textContent = n === 0 ? "No file selected"
     : n === 1 ? `${chosen[0].name} — ${chosen[0].size.toLocaleString()} bytes`
     : `${n} files selected — ${chosen.reduce((s,f)=>s+f.size,0).toLocaleString()} bytes total`;
+  $("#fileName").classList.toggle("has", n > 0);
   $("#analyze").disabled = n === 0;
   $("#analyze").textContent = n > 1 ? `Analyze ${n} files` : "Analyze";
 }
@@ -497,7 +579,7 @@ async function runBatch(files, profile) {
         + `<td><span class="vb" style="background:${color}">${label}</span></td>`
         + `<td class="v">${score.toFixed(1)}</td><td>${report.indicators.length}</td>`
         + `<td class="act"><button class="copybtn" data-view>View</button>`
-        + `<button class="copybtn" data-dl title="Download report">⬇</button></td>`;
+        + `<button class="copybtn" data-dl title="Download report"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 15V3m0 12-4-4m4 4 4-4"/><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></svg></button></td>`;
       tr.querySelector("[data-view]").addEventListener("click", ev=>{ev.stopPropagation(); loadReport(an.id);});
       tr.querySelector("[data-dl]").addEventListener("click", ev=>{ev.stopPropagation(); downloadReportFor(an.id, f.name);});
       tr.addEventListener("click", ()=>loadReport(an.id));
@@ -721,22 +803,61 @@ function renderVisuals(v) {
       <span class="muted" style="font-size:12px;font-weight:400">— derived from ${v.has_dynamic?'static + dynamic':'static'} evidence</span>
     </h2>
     ${drivers}
+    ${workflowHTML(v)}
     <div class="viz-grid">
       <div class="viz-card"${android?'':' style="grid-column:1/-1"'}><h3>Capability radar</h3>
         <div class="sub">behavioural reach, 0–100 per axis</div>${radarSVG(v.capability_radar)}</div>
       ${android?`<div class="viz-card"><h3>Permission heatmap</h3>
-        <div class="sub">Android permission groups (• = used at runtime)</div>${heatHTML(v.permission_heatmap, v.file_type)}</div>`:''}
-      <div class="viz-card" style="grid-column:1/-1"><h3>MITRE ATT&CK</h3>
+        <div class="sub">Android permission groups &middot; <i class="rtd"></i> used at runtime</div>${heatHTML(v.permission_heatmap, v.file_type)}</div>`:''}
+      <div class="viz-card" style="grid-column:1/-1"><h3>MITRE ATT&amp;CK</h3>
         <div class="sub">techniques mapped from findings, by tactic</div>${attackHTML(v.attack_matrix)}</div>
       <div class="viz-card" style="grid-column:1/-1"><h3>Behaviour &amp; network graph</h3>
-        <div class="sub">sample → capabilities → endpoints</div>${graphSVG(v.behavior_graph)}
-        <div class="legend">
-          <span><i style="background:var(--accent)"></i>sample</span>
-          <span><i style="background:var(--high)"></i>capability</span>
-          <span><i style="background:var(--crit)"></i>live endpoint</span>
-          <span><i style="background:var(--low)"></i>static IOC</span>
-        </div></div>
+        <div class="sub">sample → capabilities → endpoints · hover to trace links</div>${graphSVG(v.behavior_graph)}</div>
     </div>`;
+}
+
+const SEVCOL = {critical:'var(--crit)', high:'var(--high)', medium:'var(--med)', low:'var(--low)'};
+const _SEVRANK = {critical:0, high:1, medium:2, low:3};
+// Kill-chain ordering for the dynamic attack workflow.
+const KILLCHAIN = ["Initial Access","Execution","Persistence","Privilege Escalation",
+  "Defense Evasion","Credential Access","Discovery","Collection","Command and Control",
+  "Exfiltration","Impact","Hijack Execution Flow"];
+const TACTIC_ICON = {
+  "Initial Access":"M12 2 3 7v5c0 5 3.8 8.5 9 10 5.2-1.5 9-5 9-10V7l-9-5Z",
+  "Execution":"M8 6l6 6-6 6M14 18h4",
+  "Persistence":"M12 3v18M5 8l7-5 7 5",
+  "Privilege Escalation":"M12 19V5M6 11l6-6 6 6",
+  "Defense Evasion":"M12 2 4 6v6c0 4 3 7 8 9 5-2 8-5 8-9V6l-8-4ZM9 12l2 2 4-4",
+  "Credential Access":"M7 11V8a5 5 0 0 1 10 0v3M5 11h14v9H5z",
+  "Discovery":"M11 4a7 7 0 1 0 0 14 7 7 0 0 0 0-14ZM21 21l-4.3-4.3",
+  "Collection":"M4 7h16M4 12h16M4 17h10",
+  "Command and Control":"M5 12a7 7 0 0 1 14 0M8.5 12a3.5 3.5 0 0 1 7 0M12 12v6",
+  "Exfiltration":"M12 4v10m0 0 4-4m-4 4-4-4M5 20h14",
+  "Impact":"M12 2 2 20h20L12 2ZM12 9v5M12 17v.5",
+  "Hijack Execution Flow":"M8 6l6 6-6 6M14 18h4",
+};
+
+function workflowHTML(v) {
+  const techs = v.attack_matrix || [];
+  if (!techs.length) return "";
+  const byTac = {};
+  techs.forEach(t => { (byTac[t.tactic] = byTac[t.tactic] || []).push(t); });
+  const stages = KILLCHAIN.filter(t => byTac[t]).map(t => {
+    const worst = byTac[t].reduce((a,x) => (_SEVRANK[x.severity] < _SEVRANK[a] ? x.severity : a), "low");
+    return { tactic:t, techs:byTac[t], sev:worst };
+  });
+  if (stages.length < 1) return "";
+  const chev = `<div class="wf-arrow"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m9 6 6 6-6 6"/></svg></div>`;
+  const cards = stages.map((s,i) => `
+    <div class="wf-stage" style="--wc:${SEVCOL[s.sev]}">
+      <div class="wf-top"><span class="wf-num">${i+1}</span>
+        <svg class="wf-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="${TACTIC_ICON[s.tactic]||'M12 2 3 7v5c0 5 3.8 8.5 9 10'}"/></svg></div>
+      <div class="wf-tac">${esc(s.tactic)}</div>
+      <div class="wf-tl">${s.techs.slice(0,4).map(t=>`<div class="wf-tech"><span class="wf-tid">${esc(t.technique_id)}</span> ${esc(t.technique)}</div>`).join("")}</div>
+    </div>`).join(chev);
+  return `<div class="viz-card" style="margin-bottom:16px"><h3>Attack workflow</h3>
+    <div class="sub">how the sample operates, as a MITRE ATT&amp;CK kill chain (left → right)</div>
+    <div class="wf-scroll"><div class="wf-flow">${cards}</div></div></div>`;
 }
 
 function radarSVG(axes) {
@@ -775,13 +896,14 @@ function heatHTML(cats, fileType) {
   return `<div class="heat">` + cats.map(c => {
     const on = c.count > 0;
     const col = RISKCOL[c.risk] || RISKCOL.none;
-    const perms = (c.permissions||[]).map(p => p.permission + (p.used_at_runtime ? " •" : "")).join(", ");
-    const dark = on && c.risk !== "low";
-    return `<div class="heat-tile ${on?'on':''}" title="${esc(perms||'no permissions in this group')}"
-      style="${on?`background:${col};border-color:${col};${dark?'':'color:#0d1117'}`:''}">
-      <div class="ht">${esc(c.label)}</div>
-      <div class="hc">${c.count}</div>
-      <div class="hp">${on?esc(clip(perms,70)):'—'}</div></div>`;
+    const perms = (c.permissions||[]);
+    const chips = perms.slice(0,6).map(p =>
+      `<span class="hperm${p.used_at_runtime?' used':''}">${esc(p.permission)}${p.used_at_runtime?'<i class="rtd"></i>':''}</span>`).join("")
+      + (perms.length>6?`<span class="hperm">+${perms.length-6}</span>`:"");
+    return `<div class="heat-tile ${on?'on':''}" style="${on?`--tc:${col}`:''}"
+        title="${esc(perms.map(p=>p.permission).join(', ')||'no permissions in this group')}">
+      <div class="hh"><span class="ht">${esc(c.label)}</span><span class="hc" style="${on?`color:${col}`:''}">${c.count}</span></div>
+      <div class="hp">${on?chips:'<span class="hnone">none</span>'}</div></div>`;
   }).join("") + `</div>`;
 }
 
@@ -797,34 +919,72 @@ function attackHTML(techs) {
     </div>`).join("") + `</div>`;
 }
 
+let _graphMeta = {};
 function graphSVG(g) {
   const nodes = (g&&g.nodes)||[], edges=(g&&g.edges)||[];
   if (nodes.length <= 1) return `<div class="muted">No behavioural relationships to graph.</div>`;
-  const W=680, H=330, cx=W/2, cy=H/2;
+  const W=920, H=480, cx=W/2, cy=H/2;
   const caps = nodes.filter(n=>n.kind==='capability');
   const hosts = nodes.filter(n=>n.kind==='host');
   const pos = { sample:{x:cx,y:cy} };
   caps.forEach((n,i)=>{ const a=-Math.PI/2 + i*2*Math.PI/Math.max(caps.length,1);
-    pos[n.id]={x:cx+95*Math.cos(a), y:cy+78*Math.sin(a)}; });
+    pos[n.id]={x:cx+155*Math.cos(a), y:cy+118*Math.sin(a)}; });
   hosts.forEach((n,i)=>{ const a=-Math.PI/2 + (i+0.5)*2*Math.PI/Math.max(hosts.length,1);
-    pos[n.id]={x:cx+230*Math.cos(a), y:cy+128*Math.sin(a)}; });
-  let eSvg = edges.map(e=>{ const p=pos[e.source], q=pos[e.target]; if(!p||!q) return "";
+    pos[n.id]={x:cx+345*Math.cos(a), y:cy+200*Math.sin(a)}; });
+  const eSvg = edges.map(e=>{ const p=pos[e.source], q=pos[e.target]; if(!p||!q) return "";
     const live = e.label==='live';
-    return `<line x1="${p.x.toFixed(1)}" y1="${p.y.toFixed(1)}" x2="${q.x.toFixed(1)}" y2="${q.y.toFixed(1)}"
-      stroke="${live?'#f85149':'#30363d'}" stroke-width="${live?1.6:1}" ${live?'stroke-dasharray="4 3"':''}/>`;
+    const mx=(p.x+q.x)/2, my=(p.y+q.y)/2, dx=q.x-p.x, dy=q.y-p.y;
+    const qx=(mx - dy*0.09).toFixed(1), qy=(my + dx*0.09).toFixed(1);
+    return `<path class="gedge${live?' live':''}" data-s="${esc(e.source)}" data-t="${esc(e.target)}"
+      d="M${p.x.toFixed(1)} ${p.y.toFixed(1)} Q${qx} ${qy} ${q.x.toFixed(1)} ${q.y.toFixed(1)}"/>`;
   }).join("");
-  let nSvg = nodes.map(n=>{ const p=pos[n.id]; if(!p) return "";
-    let r=6, fill='#3b82f6', tcol='#e6edf3', label='';
-    if (n.kind==='sample'){ r=13; fill='#3b82f6'; label=clip(n.label,22); }
-    else if (n.kind==='capability'){ r=6+Math.min(6,(n.weight||1)*2); fill='#ff7b3d'; label=clip(n.label,16); }
-    else { r=6; fill=(n.detail==='live peer')?'#f85149':'#58a6ff'; label=clip(n.label,20); }
-    const below = p.y >= cy;
-    const ty = below ? p.y + r + 11 : p.y - r - 5;
-    return `<g><circle cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="${r.toFixed(1)}" fill="${fill}"
-        stroke="#0d1117" stroke-width="1.5"><title>${esc(n.label)}${n.detail?(' — '+esc(n.detail)):''}</title></circle>
-      <text x="${p.x.toFixed(1)}" y="${ty.toFixed(1)}" fill="${tcol}" font-size="10" text-anchor="middle">${esc(label)}</text></g>`;
+  _graphMeta = {};
+  const nSvg = nodes.map(n=>{ const p=pos[n.id]; if(!p) return "";
+    _graphMeta[n.id] = {label:n.label, detail:n.detail, kind:n.kind};
+    let r, cls, label;
+    if (n.kind==='sample'){ r=17; cls='n-sample'; label=clip(n.label,26); }
+    else if (n.kind==='capability'){ r=8+Math.min(7,(n.weight||1)*2); cls='n-cap'; label=clip(n.label,18); }
+    else { r=7; cls=(n.detail==='live peer')?'n-live':'n-host'; label=clip(n.label,22); }
+    const below = p.y >= cy, ty = below ? p.y+r+15 : p.y-r-8;
+    return `<g class="gnode ${cls}" data-id="${esc(n.id)}" onmouseenter="gHover(this)" onmouseleave="gOut()"
+        style="animation-delay:${(Math.random()*0.3).toFixed(2)}s">
+      <circle class="ghalo" cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="${(r+8).toFixed(1)}"/>
+      <circle class="gdot" cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="${r.toFixed(1)}"/>
+      <text class="glabel" x="${p.x.toFixed(1)}" y="${ty.toFixed(1)}" text-anchor="middle">${esc(label)}</text></g>`;
   }).join("");
-  return `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="behaviour graph">${eSvg}${nSvg}</svg>`;
+  const legend = `<div class="glegend"><span><i class="ls-sample"></i>sample</span>`
+    + `<span><i class="ls-cap"></i>capability</span><span><i class="ls-live"></i>live endpoint</span>`
+    + `<span><i class="ls-host"></i>static IOC</span><span class="ghint">hover a node to trace its links</span></div>`;
+  const defs = `<defs>
+    <radialGradient id="gsample"><stop offset="0" stop-color="#8fb0ff"/><stop offset="1" stop-color="#4f7dfb"/></radialGradient>
+    <radialGradient id="gcap"><stop offset="0" stop-color="#ffb888"/><stop offset="1" stop-color="#ff8a4c"/></radialGradient>
+    <radialGradient id="glive"><stop offset="0" stop-color="#ff8a97"/><stop offset="1" stop-color="#fb5a6a"/></radialGradient>
+    <radialGradient id="ghost"><stop offset="0" stop-color="#84cdff"/><stop offset="1" stop-color="#4db8ff"/></radialGradient></defs>`;
+  return `<div class="graphwrap"><svg class="netgraph" viewBox="0 0 ${W} ${H}" role="img" aria-label="behaviour graph">`
+    + `${defs}${eSvg}${nSvg}</svg><div class="gtip"></div>${legend}</div>`;
+}
+function gHover(el) {
+  const id = el.getAttribute("data-id"); const wrap = el.closest(".graphwrap"); const svg = wrap.querySelector("svg");
+  const near = new Set([id]);
+  wrap.querySelectorAll(".gedge").forEach(e => {
+    const s=e.getAttribute("data-s"), t=e.getAttribute("data-t");
+    if (s===id || t===id) { e.classList.add("on"); near.add(s); near.add(t); } else e.classList.remove("on");
+  });
+  wrap.querySelectorAll(".gnode").forEach(n => {
+    const on = near.has(n.getAttribute("data-id"));
+    n.classList.toggle("hi", on); n.classList.toggle("dim", !on);
+  });
+  const m = _graphMeta[id]||{}, tip = wrap.querySelector(".gtip");
+  tip.innerHTML = `<b>${esc(m.label||id)}</b>${m.detail?`<span>${esc(m.detail)}</span>`:''}<span class="k">${esc(m.kind||'')}</span>`;
+  const c = el.querySelector(".gdot"), rect = wrap.getBoundingClientRect();
+  const pt = svg.createSVGPoint(); pt.x=+c.getAttribute("cx"); pt.y=+c.getAttribute("cy");
+  const s = pt.matrixTransform(svg.getScreenCTM());
+  tip.style.left = (s.x-rect.left)+"px"; tip.style.top = (s.y-rect.top-14)+"px"; tip.classList.add("show");
+}
+function gOut() {
+  document.querySelectorAll(".graphwrap .gnode").forEach(n=>n.classList.remove("dim","hi"));
+  document.querySelectorAll(".graphwrap .gedge").forEach(e=>e.classList.remove("on"));
+  document.querySelectorAll(".graphwrap .gtip").forEach(t=>t.classList.remove("show"));
 }
 
 // ---- threat intel ----
@@ -885,7 +1045,7 @@ async function renderIntel(aid) {
 function copyEl(id, btn) {
   const t = $("#"+id).textContent;
   navigator.clipboard.writeText(t).then(() => {
-    if (btn) { const o = btn.textContent; btn.textContent = "Copied ✓"; setTimeout(()=>btn.textContent=o, 1200); }
+    if (btn) { const o = btn.textContent; btn.textContent = "Copied"; setTimeout(()=>btn.textContent=o, 1200); }
   }).catch(()=>{});
 }
 function dlEl(id, filename) {
@@ -947,7 +1107,7 @@ function renderUnderstanding(data) {
         ${t.why?`<div class="inf">${esc(t.why)}</div>`:""}</div>`).join("");
   $("#aiWrap").innerHTML = `
     <div class="panel" style="background:var(--panel2); margin-top:14px">
-      <h2>🧠 AI understanding <span class="muted" style="text-transform:none">— confidence: ${esc(u.confidence||"?")}</span></h2>
+      <h2>AI understanding <span class="muted" style="text-transform:none">— confidence: ${esc(u.confidence||"?")}</span></h2>
       <p>${esc(u.summary)}</p>
       <div class="kv">
         <div>What it is</div><div>${esc(u.what_it_is)}</div>
@@ -985,9 +1145,9 @@ function renderDynamic(d) {
 
   $("#dynWrap").innerHTML = `
     <div class="panel" style="background:var(--panel2); margin-top:18px">
-      <h2>⚙️ Dynamic analysis (runtime behaviour)</h2>
+      <h2>Dynamic analysis (runtime behaviour)</h2>
       ${simulated ? `<div class="ind" style="border-left-color:var(--med)">
-        <b style="color:var(--med)">⚠ SIMULATED telemetry (fake backend)</b>
+        <b style="color:var(--med)">SIMULATED telemetry (fake backend)</b>
         <div class="muted">This is canned demo data to exercise the pipeline — NOT this sample's real
         runtime behaviour. Install Genymotion + adb + frida and set SANDBOX_BACKEND=genymotion for real detonation.</div>
       </div>` : ""}
@@ -1046,7 +1206,7 @@ function renderVT(c) {
     vtSub = `${vt.malicious} malicious · ${vt.suspicious} suspicious${vt.scan_date?` · ${esc(vt.scan_date)}`:""}`;
   }
   const callout = c.contrast
-    ? `<div class="vt-callout win"><b>⚠ Detection gap:</b> MalwareTotal flags this sample
+    ? `<div class="vt-callout win"><b>Detection gap:</b> MalwareTotal flags this sample
         <b>${esc(c.aegis_verdict)}</b> (${(c.aegis_risk||0).toFixed(0)}/100) while VirusTotal
         ${vt.found?"shows 0 engines flagging it":"has no record of it"} — exactly the kind of
         threat multi-engine AV misses.</div>`
@@ -1055,7 +1215,7 @@ function renderVT(c) {
     ? `<div class="vt-engines"><div class="muted" style="font-size:12px">VT engine hits:</div>`
       + vt.detections.slice(0,15).map(d=>`<span class="pill" title="${esc(d.engine)}">${esc(d.engine)}: ${esc(d.result||d.category)}</span>`).join("") + `</div>`
     : "";
-  const link = vt.permalink ? `<div class="vt-link"><a href="${esc(vt.permalink)}" target="_blank" rel="noopener">View on VirusTotal ↗</a></div>` : "";
+  const link = vt.permalink ? `<div class="vt-link"><a href="${esc(vt.permalink)}" target="_blank" rel="noopener">View on VirusTotal &rarr;</a></div>` : "";
   const cfgHint = (!vt.available && /not configured/i.test(vt.reason||""))
     ? `<div class="muted" style="font-size:12px;margin-top:6px">Add <span class="mono">VIRUSTOTAL_API_KEY</span> to .env and restart. Only the SHA-256 is sent — never the file.</div>` : "";
 
@@ -1084,13 +1244,7 @@ function bars(items, colorFn) {
   }).join("") + `</div>`;
 }
 
-async function openCorpus() {
-  $("#corpusPanel").classList.remove("hidden");
-  $("#corpusBody").innerHTML = '<div class="msg"><span class="spin"></span> aggregating…</div>';
-  $("#corpusPanel").scrollIntoView({behavior:"smooth"});
-  try { renderCorpus(await api("/v1/corpus/scoreboard")); }
-  catch (e) { $("#corpusBody").innerHTML = `<div class="msg err">${esc(e.message)}</div>`; }
-}
+function openCorpus() { window.open("corpus.html", "_blank", "noopener"); }
 
 function renderCorpus(b) {
   if (!b.total) {
